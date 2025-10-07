@@ -353,6 +353,12 @@ ob_start();
                 'tickets' => 'Ticket notifications',
                 'forms' => 'Onboarding forms',
             ];
+            $notificationLead = [
+                'account' => 'Security alerts and account changes.',
+                'orders' => 'Billing updates and payment reminders.',
+                'tickets' => 'Support ticket activity and assignments.',
+                'forms' => 'Onboarding and intake reminders.',
+            ];
             $notificationDescriptions = [
                 'account' => ['security' => 'Alerts when account security settings change.', 'login' => 'Email when we detect a new device login.'],
                 'orders' => ['placed' => 'Send me a receipt when an order is placed.', 'paid' => 'Notify me when an order is paid.', 'overdue' => 'Send reminders before and after an invoice is due.'],
@@ -362,8 +368,13 @@ ob_start();
             ?>
             <div class="notification-columns">
                 <?php foreach ($notificationLabels as $group => $title): ?>
-                    <fieldset class="notification-group">
-                        <legend><?= e($title); ?></legend>
+                    <section class="notification-group">
+                        <header>
+                            <h3><?= e($title); ?></h3>
+                            <?php if (!empty($notificationLead[$group])): ?>
+                                <p><?= e($notificationLead[$group]); ?></p>
+                            <?php endif; ?>
+                        </header>
                         <ul>
                             <?php foreach ($notificationDescriptions[$group] as $key => $copy): ?>
                                 <li class="toggle-item">
@@ -377,7 +388,7 @@ ob_start();
                                 </li>
                             <?php endforeach; ?>
                         </ul>
-                    </fieldset>
+                    </section>
                 <?php endforeach; ?>
             </div>
             <div class="form-actions">

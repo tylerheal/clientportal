@@ -6,6 +6,7 @@ $company = get_setting('company_name', 'Service Portal');
 $logoSetting = get_setting('brand_logo_url', '');
 $logo = $logoSetting !== '' ? asset_url($logoSetting) : '';
 $primary = get_setting('brand_primary_color', '#2a6dff');
+$authHasLogo = $logo !== '';
 $view = $authView ?? 'login';
 $baseAction = [
     'login' => url_for('login'),
@@ -24,7 +25,7 @@ $baseAction = [
 </head>
 <body class="auth-body">
     <div class="auth-wrapper">
-        <header class="auth-brand">
+        <header class="auth-brand<?= $authHasLogo ? ' auth-brand--has-logo' : ''; ?>">
             <div class="auth-logo" style="--brand-primary: <?= e($primary); ?>;">
                 <?php if ($logo !== ''): ?>
                     <img src="<?= e($logo); ?>" alt="<?= e($company); ?> logo">
@@ -32,7 +33,7 @@ $baseAction = [
                     <span><?= e(brand_initials($company)); ?></span>
                 <?php endif; ?>
             </div>
-            <h1><?= e($company); ?></h1>
+            <h1 class="<?= $authHasLogo ? 'sr-only' : ''; ?>"><?= e($company); ?></h1>
         </header>
         <main class="auth-card">
             <h2 class="auth-title"><?= e($pageTitle ?? ''); ?></h2>

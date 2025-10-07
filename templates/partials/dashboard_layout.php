@@ -21,6 +21,21 @@ $brandInitials = brand_initials($company);
 $currentPath = trim(request_path(), '/');
 $pageScripts = $scripts ?? $pageScripts ?? [];
 $inlineScripts = $inlineScripts ?? [];
+$iconMap = [
+    'overview' => '🏠',
+    'orders' => '📦',
+    'tickets' => '🎫',
+    'clients' => '🧑‍🤝‍🧑',
+    'services' => '🛠️',
+    'forms' => '📝',
+    'invoices' => '🧾',
+    'payments' => '💳',
+    'automations' => '🤖',
+    'administrators' => '🛡️',
+    'settings' => '⚙️',
+    'dashboard' => '📊',
+];
+$brandHasLogo = (bool) $logo;
 ?>
 <!doctype html>
 <html lang="en">
@@ -34,7 +49,7 @@ $inlineScripts = $inlineScripts ?? [];
 <body class="dashboard-body <?= e($bodyClassAttr); ?>">
     <div class="layout" data-layout>
         <aside class="sidebar" data-sidebar>
-            <div class="brand">
+            <div class="brand<?= $brandHasLogo ? ' brand--has-logo' : ''; ?>">
                 <div class="sidebar-logo">
                     <?php if ($logo): ?>
                         <img src="<?= e($logo); ?>" alt="<?= e($company); ?> logo">
@@ -42,7 +57,11 @@ $inlineScripts = $inlineScripts ?? [];
                         <span class="sidebar-logo--placeholder" aria-hidden="true"><?= e($brandInitials); ?></span>
                     <?php endif; ?>
                 </div>
-                <span><?= e($company); ?></span>
+                <?php if ($brandHasLogo): ?>
+                    <span class="sr-only"><?= e($company); ?></span>
+                <?php else: ?>
+                    <span class="brand-name"><?= e($company); ?></span>
+                <?php endif; ?>
             </div>
             <nav class="nav" aria-label="Primary navigation">
                 <?php foreach ($sidebar as $item): ?>
@@ -51,8 +70,9 @@ $inlineScripts = $inlineScripts ?? [];
                         <?php continue; ?>
                     <?php endif; ?>
                     <?php $isActive = ($activeKey && ($item['key'] ?? '') === $activeKey) || (!empty($item['current'])); ?>
+                    <?php $icon = $item['icon'] ?? ($iconMap[$item['key'] ?? ''] ?? '⬤'); ?>
                     <a href="<?= e($item['href']); ?>" class="<?= $isActive ? 'active' : ''; ?>">
-                        <span class="sidebar-icon" aria-hidden="true"></span>
+                        <span class="sidebar-icon" aria-hidden="true"><?= e($icon); ?></span>
                         <span><?= e($item['label']); ?></span>
                     </a>
                 <?php endforeach; ?>
@@ -117,7 +137,7 @@ $inlineScripts = $inlineScripts ?? [];
     </div>
     <div class="mobile-menu" id="mobileMenu" data-mobile-menu>
         <div class="mobile-sidebar">
-            <div class="brand">
+            <div class="brand<?= $brandHasLogo ? ' brand--has-logo' : ''; ?>">
                 <div class="sidebar-logo">
                     <?php if ($logo): ?>
                         <img src="<?= e($logo); ?>" alt="<?= e($company); ?> logo">
@@ -125,7 +145,11 @@ $inlineScripts = $inlineScripts ?? [];
                         <span class="sidebar-logo--placeholder" aria-hidden="true"><?= e($brandInitials); ?></span>
                     <?php endif; ?>
                 </div>
-                <span><?= e($company); ?></span>
+                <?php if ($brandHasLogo): ?>
+                    <span class="sr-only"><?= e($company); ?></span>
+                <?php else: ?>
+                    <span class="brand-name"><?= e($company); ?></span>
+                <?php endif; ?>
             </div>
             <nav class="mobile-nav" aria-label="Mobile navigation">
                 <?php foreach ($sidebar as $item): ?>
