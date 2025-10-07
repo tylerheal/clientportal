@@ -693,12 +693,15 @@ if ($view === 'ticket' && $ticketDetailId) {
 }
 
 $clientSidebar = [
+    ['type' => 'group', 'label' => 'Activity'],
     ['key' => 'overview', 'label' => 'Overview', 'href' => url_for('dashboard')],
+    ['key' => 'orders', 'label' => 'Orders', 'href' => url_for('dashboard/orders')],
+    ['key' => 'tickets', 'label' => 'Support', 'href' => url_for('dashboard/tickets')],
+    ['type' => 'group', 'label' => 'Services'],
     ['key' => 'services', 'label' => 'Services', 'href' => url_for('dashboard/services')],
     ['key' => 'forms', 'label' => 'Forms', 'href' => url_for('dashboard/forms')],
-    ['key' => 'orders', 'label' => 'Orders', 'href' => url_for('dashboard/orders')],
+    ['type' => 'group', 'label' => 'Billing'],
     ['key' => 'invoices', 'label' => 'Invoices', 'href' => url_for('dashboard/invoices')],
-    ['key' => 'tickets', 'label' => 'Support', 'href' => url_for('dashboard/tickets')],
 ];
 
 $pageTitleMap = [

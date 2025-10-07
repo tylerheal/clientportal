@@ -4,15 +4,19 @@ if (!defined('APP_BOOTSTRAPPED')) {
 }
 
 $adminSidebar = [
+    ['type' => 'group', 'label' => 'Activity'],
     ['key' => 'overview', 'label' => 'Overview', 'href' => url_for('admin/overview')],
-    ['key' => 'services', 'label' => 'Services', 'href' => url_for('admin/services')],
-    ['key' => 'forms', 'label' => 'Forms', 'href' => url_for('admin/forms')],
     ['key' => 'orders', 'label' => 'Orders', 'href' => url_for('admin/orders')],
-    ['key' => 'invoices', 'label' => 'Invoices', 'href' => url_for('admin/invoices')],
     ['key' => 'tickets', 'label' => 'Tickets', 'href' => url_for('admin/tickets')],
     ['key' => 'clients', 'label' => 'Clients', 'href' => url_for('admin/clients')],
-    ['key' => 'automations', 'label' => 'Automations', 'href' => url_for('admin/automations')],
+    ['type' => 'group', 'label' => 'Billing'],
+    ['key' => 'invoices', 'label' => 'Invoices', 'href' => url_for('admin/invoices')],
     ['key' => 'payments', 'label' => 'Payments', 'href' => url_for('admin/payments')],
+    ['type' => 'group', 'label' => 'Marketing'],
+    ['key' => 'automations', 'label' => 'Automations', 'href' => url_for('admin/automations')],
+    ['type' => 'group', 'label' => 'Setup'],
+    ['key' => 'services', 'label' => 'Services', 'href' => url_for('admin/services')],
+    ['key' => 'forms', 'label' => 'Forms', 'href' => url_for('admin/forms')],
     ['key' => 'administrators', 'label' => 'Admins', 'href' => url_for('admin/administrators')],
     ['key' => 'settings', 'label' => 'Settings', 'href' => url_for('admin/settings')],
 ];

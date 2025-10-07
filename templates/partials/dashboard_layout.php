@@ -31,27 +31,34 @@ $currentPath = trim(request_path(), '/');
 <body class="dashboard-body <?= e($bodyClassAttr); ?>">
     <div class="dashboard-layout">
         <aside class="dashboard-sidebar" style="--brand-primary: <?= e($primary); ?>;">
-            <div class="sidebar-brand">
-                <div class="sidebar-logo">
-                    <?php if ($logo): ?>
-                        <img src="<?= e($logo); ?>" alt="<?= e($company); ?> logo">
-                    <?php else: ?>
-                        <span class="sidebar-logo--placeholder" aria-hidden="true"><?= e($brandInitials); ?></span>
-                    <?php endif; ?>
+            <div class="sidebar-inner">
+                <div class="sidebar-brand">
+                    <div class="sidebar-logo">
+                        <?php if ($logo): ?>
+                            <img src="<?= e($logo); ?>" alt="<?= e($company); ?> logo">
+                        <?php else: ?>
+                            <span class="sidebar-logo--placeholder" aria-hidden="true"><?= e($brandInitials); ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <span><?= e($company); ?></span>
                 </div>
-                <span><?= e($company); ?></span>
-            </div>
-            <nav class="sidebar-nav">
-                <?php foreach ($sidebar as $item): ?>
-                    <?php $isActive = ($activeKey && ($item['key'] ?? '') === $activeKey) || (!empty($item['current'])); ?>
-                    <a href="<?= e($item['href']); ?>" class="sidebar-link<?= $isActive ? ' sidebar-link--active' : ''; ?>">
-                        <span><?= e($item['label']); ?></span>
-                    </a>
-                <?php endforeach; ?>
-            </nav>
-            <div class="sidebar-footer">
-                <a class="sidebar-footer-link" href="<?= e(url_for('profile')); ?>">Profile &amp; security</a>
-                <a class="sidebar-footer-link" href="<?= e(url_for('logout')); ?>">Sign out</a>
+                <nav class="sidebar-nav">
+                    <?php foreach ($sidebar as $item): ?>
+                        <?php if (($item['type'] ?? 'link') === 'group'): ?>
+                            <div class="sidebar-group"><?= e($item['label']); ?></div>
+                            <?php continue; ?>
+                        <?php endif; ?>
+                        <?php $isActive = ($activeKey && ($item['key'] ?? '') === $activeKey) || (!empty($item['current'])); ?>
+                        <a href="<?= e($item['href']); ?>" class="sidebar-link<?= $isActive ? ' sidebar-link--active' : ''; ?>">
+                            <span class="sidebar-icon" aria-hidden="true"></span>
+                            <span><?= e($item['label']); ?></span>
+                        </a>
+                    <?php endforeach; ?>
+                </nav>
+                <div class="sidebar-footer">
+                    <a class="sidebar-footer-link" href="<?= e(url_for('profile')); ?>">Profile &amp; security</a>
+                    <a class="sidebar-footer-link" href="<?= e(url_for('logout')); ?>">Sign out</a>
+                </div>
             </div>
         </aside>
         <div class="sidebar-backdrop" data-sidebar-backdrop></div>
@@ -78,6 +85,13 @@ $currentPath = trim(request_path(), '/');
                         </span>
                         <input type="search" name="q" value="<?= e($_GET['q'] ?? ''); ?>" placeholder="Search the portal">
                     </form>
+                    <button type="button" class="utility-button" aria-label="Open help">
+                        <span class="icon" aria-hidden="true">
+                            <svg viewBox="0 0 512 512" role="presentation" focusable="false">
+                                <path d="M256 32C132.3 32 32 132.3 32 256s100.3 224 224 224 224-100.3 224-224S379.7 32 256 32zm0 96a64 64 0 0 1 64 64c0 28.3-14.4 44.5-35.4 62.6l-5.6 4.7c-8.1 6.8-13 17.4-13 28.4v12.3a16 16 0 0 1-32 0v-12.3c0-20.5 9.1-40 24.6-52.6l5.6-4.7c15.4-12.8 20.8-19.2 20.8-38.4a32 32 0 0 0-64 0 16 16 0 0 1-32 0 64 64 0 0 1 64-64zm0 256a24 24 0 1 1 0-48 24 24 0 0 1 0 48z" />
+                            </svg>
+                        </span>
+                    </button>
                     <details class="notification-details">
                         <summary class="notification-button<?= $unreadCount ? ' notification-button--active' : ''; ?>" aria-label="Notifications">
                             <span class="icon icon--bell" aria-hidden="true">
