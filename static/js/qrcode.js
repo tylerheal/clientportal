@@ -49,5 +49,5 @@ QRBitBuffer.prototype.getLengthInBits=function(){return this.length;};
 QRBitBuffer.prototype.putBit=function(bit){var bufIndex=Math.floor(this.length/8);if(this.buffer.length<=bufIndex)this.buffer.push(0);if(bit)this.buffer[bufIndex]|=128>>this.length%8;this.length++;};
 for(var i=0;i<256;i++){QRUtil.EXP_TABLE[i]=i==0?1:QRUtil.EXP_TABLE[i-1]<<1;if(QRUtil.EXP_TABLE[i]>=256)QRUtil.EXP_TABLE[i]^=285;}
 for(i=0;i<255;i++)QRUtil.LOG_TABLE[QRUtil.EXP_TABLE[i]]=i;
-window.SimpleQR=function(container,text){var qr=new QRCode(4,'M');qr.addData(text);qr.make();qr.renderTo(container);};
+window.SimpleQR=function(container,text){if(!container||!text){return;}var type=4;for(;type<=40;type++){try{var qr=new QRCode(type,'M');qr.addData(text);qr.make();qr.renderTo(container);return;}catch(err){if(err&&err.message&&err.message.indexOf('code length overflow')!==-1){continue;}console.error(err);break;}}container.innerHTML='<p style="margin:0;font-size:0.85rem;color:#fca5a5;text-align:center;">Unable to render code</p>';};
 })();
