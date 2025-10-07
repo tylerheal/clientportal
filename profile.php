@@ -185,220 +185,233 @@ $notificationPrefs = array_replace_recursive($notificationDefaults, $settings['n
 $pendingSetup = $_SESSION['totp_setup']['secret'] ?? null;
 $totpUri = $pendingSetup ? sprintf('otpauth://totp/%s:%s?secret=%s&issuer=%s', rawurlencode(get_setting('company_name', 'Service Portal')), rawurlencode($user['email']), $pendingSetup, rawurlencode(get_setting('company_name', 'Service Portal'))) : null;
 $recoveryCodes = $user['totp_recovery_codes'] ? json_decode($user['totp_recovery_codes'], true) : [];
-$company = get_setting('company_name', 'Service Portal');
-$logoSetting = get_setting('brand_logo_url', '');
-$logo = $logoSetting !== '' ? asset_url($logoSetting) : null;
-$brandInitials = brand_initials($company);
+ $role = $user['role'] ?? 'client';
 
+$adminSidebar = [
+    ['type' => 'group', 'label' => 'Activity'],
+    ['key' => 'overview', 'label' => 'Overview', 'href' => url_for('admin/overview')],
+    ['key' => 'orders', 'label' => 'Orders', 'href' => url_for('admin/orders')],
+    ['key' => 'tickets', 'label' => 'Tickets', 'href' => url_for('admin/tickets')],
+    ['key' => 'clients', 'label' => 'Clients', 'href' => url_for('admin/clients')],
+    ['type' => 'group', 'label' => 'Billing'],
+    ['key' => 'invoices', 'label' => 'Invoices', 'href' => url_for('admin/invoices')],
+    ['key' => 'payments', 'label' => 'Payments', 'href' => url_for('admin/payments')],
+    ['type' => 'group', 'label' => 'Marketing'],
+    ['key' => 'automations', 'label' => 'Automations', 'href' => url_for('admin/automations')],
+    ['type' => 'group', 'label' => 'Setup'],
+    ['key' => 'services', 'label' => 'Services', 'href' => url_for('admin/services')],
+    ['key' => 'forms', 'label' => 'Forms', 'href' => url_for('admin/forms')],
+    ['key' => 'administrators', 'label' => 'Admins', 'href' => url_for('admin/administrators')],
+    ['key' => 'settings', 'label' => 'Settings', 'href' => url_for('admin/settings')],
+];
+
+$clientSidebar = [
+    ['type' => 'group', 'label' => 'Activity'],
+    ['key' => 'overview', 'label' => 'Overview', 'href' => url_for('dashboard')],
+    ['key' => 'orders', 'label' => 'Orders', 'href' => url_for('dashboard/orders')],
+    ['key' => 'tickets', 'label' => 'Support', 'href' => url_for('dashboard/tickets')],
+    ['type' => 'group', 'label' => 'Services'],
+    ['key' => 'services', 'label' => 'Services', 'href' => url_for('dashboard/services')],
+    ['key' => 'forms', 'label' => 'Forms', 'href' => url_for('dashboard/forms')],
+    ['type' => 'group', 'label' => 'Billing'],
+    ['key' => 'invoices', 'label' => 'Invoices', 'href' => url_for('dashboard/invoices')],
+];
+
+$sidebar = $role === 'admin' ? $adminSidebar : $clientSidebar;
+$company = get_setting('company_name', 'Service Portal');
+$pageTitle = 'Profile & security';
+$bodyClass = 'profile-view';
+$searchAction = $role === 'admin' ? url_for('admin/overview') : url_for('dashboard');
+$backHref = $role === 'admin' ? url_for('admin/overview') : url_for('dashboard');
+$activeKey = '';
+
+ob_start();
 ?>
-<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Profile & security · <?= e($company); ?></title>
-    <link rel="stylesheet" href="<?= e(url_for('static/css/app.css')); ?>">
-    <style><?= theme_styles(); ?></style>
-</head>
-<body class="profile-body">
-    <div class="profile-wrapper">
-        <aside class="profile-sidebar">
-            <div class="profile-brand">
-                <?php if ($logo): ?>
-                    <img src="<?= e($logo); ?>" alt="<?= e($company); ?> logo">
-                <?php else: ?>
-                    <span class="logo-placeholder" aria-hidden="true"><?= e($brandInitials); ?></span>
-                <?php endif; ?>
-                <strong><?= e($company); ?></strong>
-                <p>Manage your account preferences and security.</p>
-            </div>
-            <nav class="profile-nav">
-                <a class="button button--ghost" href="<?= e(url_for('dashboard')); ?>">← Back to dashboard</a>
-            </nav>
-        </aside>
-        <main class="profile-main">
-            <header class="page-header page-header--profile">
+<section class="page-section profile-page">
+    <header class="page-header profile-header">
+        <div>
+            <h1>Profile &amp; security</h1>
+            <p>Update your personal details, security options, and notifications.</p>
+        </div>
+        <a class="button button--ghost" href="<?= e($backHref); ?>">← Back to dashboard</a>
+    </header>
+    <?php foreach (['error', 'success', 'info'] as $type): ?>
+        <?php if ($message = flash($type)): ?>
+            <div class="alert alert--<?= $type; ?>"><?= e($message); ?></div>
+        <?php endif; ?>
+    <?php endforeach; ?>
+
+    <div class="profile-columns">
+        <article class="card profile-card">
+            <header class="profile-card__header">
                 <div>
-                    <h1>Profile &amp; security</h1>
-                    <p>Update your personal details, security options, and notifications.</p>
+                    <h2>Account details</h2>
+                    <p>Keep your contact information and preferences current.</p>
                 </div>
             </header>
-            <?php foreach (['error', 'success', 'info'] as $type): ?>
-                <?php if ($message = flash($type)): ?>
-                    <div class="alert alert--<?= $type; ?>"><?= e($message); ?></div>
-                <?php endif; ?>
-            <?php endforeach; ?>
-            <section class="profile-grid">
-                <article class="card profile-card">
-                    <header>
-                        <div>
-                            <h2>Account details</h2>
-                            <p>Keep your contact information and preferences current.</p>
-                        </div>
-                    </header>
-                    <form action="<?= e(url_for('profile')); ?>" method="post" class="form-grid form-grid--two">
-                        <input type="hidden" name="action" value="update_profile">
-                        <label>First name
-                            <input type="text" name="first_name" value="<?= e($firstName); ?>" required>
-                        </label>
-                        <label>Last name
-                            <input type="text" name="last_name" value="<?= e($lastName); ?>">
-                        </label>
-                        <label>Email address
-                            <input type="email" value="<?= e($user['email']); ?>" disabled>
-                        </label>
-                        <label>Company
-                            <input type="text" name="company" value="<?= e($user['company']); ?>">
-                        </label>
-                        <label>Phone number
-                            <input type="text" name="phone" value="<?= e($user['phone']); ?>">
-                        </label>
-                        <label>Timezone
-                            <select name="timezone">
-                                <?php foreach ($timezones as $zone => $label): ?>
-                                    <option value="<?= e($zone); ?>" <?= $zone === $timezoneChoice ? 'selected' : ''; ?>><?= e($label); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </label>
-                        <label>Avatar URL
-                            <input type="url" name="avatar_url" placeholder="https://" value="<?= e($user['avatar_url']); ?>">
-                            <span class="hint">Provide a direct image link for your profile avatar.</span>
-                        </label>
-                        <label class="toggle">
-                            <input type="checkbox" name="push_browser" <?= $pushBrowser ? 'checked' : ''; ?>>
-                            <span>Enable push notifications in this browser</span>
-                        </label>
-                        <div class="form-actions">
-                            <button type="submit" class="button button--primary">Save changes</button>
-                        </div>
-                    </form>
-                </article>
-                <article class="card profile-card">
-                    <header>
-                        <div>
-                            <h2>Security</h2>
-                            <p>Update your password and manage two-factor authentication.</p>
-                        </div>
-                    </header>
-                    <form action="<?= e(url_for('profile')); ?>" method="post" class="form-grid form-grid--two">
-                        <input type="hidden" name="action" value="change_password">
-                        <label>Current password
-                            <input type="password" name="current_password" required>
-                        </label>
-                        <label>New password
-                            <input type="password" name="new_password" minlength="8" required>
-                        </label>
-                        <label>Confirm new password
-                            <input type="password" name="confirm_password" minlength="8" required>
-                        </label>
-                        <div class="form-actions">
-                            <button type="submit" class="button button--ghost">Update password</button>
-                        </div>
-                    </form>
-                    <div class="two-factor-panel">
-                        <div>
-                            <h3>Two-factor authentication</h3>
-                            <p>Add an extra layer of protection using an authenticator app.</p>
-                        </div>
-                        <div class="two-factor-actions">
-                            <?php if (!empty($user['totp_enabled'])): ?>
-                                <span class="badge badge--success">Enabled</span>
-                                <form action="<?= e(url_for('profile')); ?>" method="post" class="inline-form">
-                                    <input type="hidden" name="action" value="disable_totp">
-                                    <button type="submit" class="button button--ghost">Disable 2FA</button>
-                                </form>
-                                <form action="<?= e(url_for('profile')); ?>" method="post" class="inline-form">
-                                    <input type="hidden" name="action" value="regenerate_codes">
-                                    <button type="submit" class="button button--ghost">Regenerate recovery codes</button>
-                                </form>
-                            <?php else: ?>
-                                <span class="badge badge--pending">Disabled</span>
-                                <form action="<?= e(url_for('profile')); ?>" method="post" class="inline-form">
-                                    <input type="hidden" name="action" value="begin_totp">
-                                    <button type="submit" class="button button--primary">Enable 2FA</button>
-                                </form>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </article>
-            </section>
-            <section class="profile-grid profile-grid--wide">
-                <article class="card profile-card">
-                    <header>
-                        <div>
-                            <h2>Notifications</h2>
-                            <p>Select which updates arrive in your inbox.</p>
-                        </div>
-                    </header>
-                    <form action="<?= e(url_for('profile')); ?>" method="post" class="notification-groups">
-                        <input type="hidden" name="action" value="update_notifications">
-                        <?php
-                        $notificationLabels = [
-                            'account' => 'Account notifications',
-                            'orders' => 'Order notifications',
-                            'tickets' => 'Ticket notifications',
-                            'forms' => 'Onboarding forms',
-                        ];
-                        $notificationDescriptions = [
-                            'account' => ['security' => 'Alerts when account security settings change.', 'login' => 'Email when we detect a new device login.'],
-                            'orders' => ['placed' => 'Send me a receipt when an order is placed.', 'paid' => 'Notify me when an order is paid.', 'overdue' => 'Send reminders before and after an invoice is due.'],
-                            'tickets' => ['replied' => 'Let me know when staff reply to a ticket.', 'assigned' => 'Alert me if a ticket is assigned to a teammate.', 'closed' => 'Email when a ticket is closed.'],
-                            'forms' => ['assigned' => 'Email me when a form is assigned.', 'reminders' => 'Send reminders for incomplete forms.'],
-                        ];
-                        ?>
-                        <?php foreach ($notificationLabels as $group => $title): ?>
-                            <fieldset class="notification-group">
-                                <legend><?= e($title); ?></legend>
-                                <ul>
-                                    <?php foreach ($notificationDescriptions[$group] as $key => $copy): ?>
-                                        <li class="toggle-item">
-                                            <label>
-                                                <input type="checkbox" name="notifications[<?= e($group); ?>][<?= e($key); ?>]" <?= !empty($notificationPrefs[$group][$key]) ? 'checked' : ''; ?>>
-                                                <span>
-                                                    <strong><?= e(ucfirst(str_replace('_', ' ', $key))); ?></strong>
-                                                    <small><?= e($copy); ?></small>
-                                                </span>
-                                            </label>
-                                        </li>
-                                    <?php endforeach; ?>
-                                </ul>
-                            </fieldset>
+            <form action="<?= e(url_for('profile')); ?>" method="post" class="form-grid form-grid--two">
+                <input type="hidden" name="action" value="update_profile">
+                <label>First name
+                    <input type="text" name="first_name" value="<?= e($firstName); ?>" required>
+                </label>
+                <label>Last name
+                    <input type="text" name="last_name" value="<?= e($lastName); ?>">
+                </label>
+                <label>Email address
+                    <input type="email" value="<?= e($user['email']); ?>" disabled>
+                </label>
+                <label>Company
+                    <input type="text" name="company" value="<?= e($user['company']); ?>">
+                </label>
+                <label>Phone number
+                    <input type="text" name="phone" value="<?= e($user['phone']); ?>">
+                </label>
+                <label>Timezone
+                    <select name="timezone">
+                        <?php foreach ($timezones as $zone => $label): ?>
+                            <option value="<?= e($zone); ?>" <?= $zone === $timezoneChoice ? 'selected' : ''; ?>><?= e($label); ?></option>
                         <?php endforeach; ?>
-                        <div class="form-actions">
-                            <button type="submit" class="button button--primary">Save notification settings</button>
-                        </div>
-                    </form>
-                </article>
-            </section>
-            <?php if (!empty($recoveryCodes)): ?>
-                <section class="profile-grid profile-grid--wide">
-                    <article class="card profile-card">
-                        <header>
-                            <div>
-                                <h2>Recovery codes</h2>
-                                <p>Store these one-time codes somewhere secure. Each code is valid once.</p>
-                            </div>
-                        </header>
-                        <div class="profile-recovery">
-                            <ul>
-                                <?php foreach ($recoveryCodes as $code): ?>
-                                    <li><?= e($code); ?></li>
-                                <?php endforeach; ?>
-                            </ul>
-                        </div>
-                    </article>
-                </section>
-            <?php endif; ?>
-        </main>
+                    </select>
+                </label>
+                <label>Avatar URL
+                    <input type="url" name="avatar_url" placeholder="https://" value="<?= e($user['avatar_url']); ?>">
+                    <span class="hint">Provide a direct image link for your profile avatar.</span>
+                </label>
+                <label class="toggle">
+                    <input type="checkbox" name="push_browser" <?= $pushBrowser ? 'checked' : ''; ?>>
+                    <span>Enable push notifications in this browser</span>
+                </label>
+                <div class="form-actions">
+                    <button type="submit" class="button button--primary">Save changes</button>
+                </div>
+            </form>
+        </article>
+
+        <article class="card profile-card">
+            <header class="profile-card__header">
+                <div>
+                    <h2>Security</h2>
+                    <p>Update your password and manage two-factor authentication.</p>
+                </div>
+            </header>
+            <form action="<?= e(url_for('profile')); ?>" method="post" class="form-grid form-grid--two">
+                <input type="hidden" name="action" value="change_password">
+                <label>Current password
+                    <input type="password" name="current_password" required>
+                </label>
+                <label>New password
+                    <input type="password" name="new_password" minlength="8" required>
+                </label>
+                <label>Confirm new password
+                    <input type="password" name="confirm_password" minlength="8" required>
+                </label>
+                <div class="form-actions">
+                    <button type="submit" class="button button--ghost">Update password</button>
+                </div>
+            </form>
+            <div class="two-factor-panel">
+                <div>
+                    <h3>Two-factor authentication</h3>
+                    <p>Add an extra layer of protection using an authenticator app.</p>
+                </div>
+                <div class="two-factor-actions">
+                    <?php if (!empty($user['totp_enabled'])): ?>
+                        <span class="badge badge--success">Enabled</span>
+                        <form action="<?= e(url_for('profile')); ?>" method="post" class="inline-form">
+                            <input type="hidden" name="action" value="disable_totp">
+                            <button type="submit" class="button button--ghost">Disable 2FA</button>
+                        </form>
+                        <form action="<?= e(url_for('profile')); ?>" method="post" class="inline-form">
+                            <input type="hidden" name="action" value="regenerate_codes">
+                            <button type="submit" class="button button--ghost">Regenerate recovery codes</button>
+                        </form>
+                    <?php else: ?>
+                        <span class="badge badge--pending">Disabled</span>
+                        <form action="<?= e(url_for('profile')); ?>" method="post" class="inline-form">
+                            <input type="hidden" name="action" value="begin_totp">
+                            <button type="submit" class="button button--primary">Enable 2FA</button>
+                        </form>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </article>
     </div>
+
+    <article class="card profile-card profile-card--notifications">
+        <header class="profile-card__header">
+            <div>
+                <h2>Notifications</h2>
+                <p>Select which updates arrive in your inbox.</p>
+            </div>
+        </header>
+        <form action="<?= e(url_for('profile')); ?>" method="post" class="notification-groups">
+            <input type="hidden" name="action" value="update_notifications">
+            <?php
+            $notificationLabels = [
+                'account' => 'Account notifications',
+                'orders' => 'Order notifications',
+                'tickets' => 'Ticket notifications',
+                'forms' => 'Onboarding forms',
+            ];
+            $notificationDescriptions = [
+                'account' => ['security' => 'Alerts when account security settings change.', 'login' => 'Email when we detect a new device login.'],
+                'orders' => ['placed' => 'Send me a receipt when an order is placed.', 'paid' => 'Notify me when an order is paid.', 'overdue' => 'Send reminders before and after an invoice is due.'],
+                'tickets' => ['replied' => 'Let me know when staff reply to a ticket.', 'assigned' => 'Alert me if a ticket is assigned to a teammate.', 'closed' => 'Email when a ticket is closed.'],
+                'forms' => ['assigned' => 'Email me when a form is assigned.', 'reminders' => 'Send reminders for incomplete forms.'],
+            ];
+            ?>
+            <div class="notification-columns">
+                <?php foreach ($notificationLabels as $group => $title): ?>
+                    <fieldset class="notification-group">
+                        <legend><?= e($title); ?></legend>
+                        <ul>
+                            <?php foreach ($notificationDescriptions[$group] as $key => $copy): ?>
+                                <li class="toggle-item">
+                                    <label>
+                                        <input type="checkbox" name="notifications[<?= e($group); ?>][<?= e($key); ?>]" <?= !empty($notificationPrefs[$group][$key]) ? 'checked' : ''; ?>>
+                                        <span>
+                                            <strong><?= e(ucfirst(str_replace('_', ' ', $key))); ?></strong>
+                                            <small><?= e($copy); ?></small>
+                                        </span>
+                                    </label>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </fieldset>
+                <?php endforeach; ?>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="button button--primary">Save notification settings</button>
+            </div>
+        </form>
+    </article>
+
+    <?php if (!empty($recoveryCodes)): ?>
+        <article class="card profile-card">
+            <header class="profile-card__header">
+                <div>
+                    <h2>Recovery codes</h2>
+                    <p>Store these one-time codes somewhere secure. Each code is valid once.</p>
+                </div>
+            </header>
+            <div class="profile-recovery">
+                <ul>
+                    <?php foreach ($recoveryCodes as $code): ?>
+                        <li><?= e($code); ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        </article>
+    <?php endif; ?>
+
     <?php if ($pendingSetup): ?>
-        <div class="modal-overlay" data-modal="totp">
+        <div class="modal-overlay" data-modal="totp" data-qr="<?= e($totpUri); ?>">
             <div class="modal-card">
                 <button class="modal-close" data-close-modal>&times;</button>
                 <h3>Scan to enable 2FA</h3>
                 <p>Scan the code with your authenticator app or enter the secret manually.</p>
                 <div id="qr-container" class="qr-box"></div>
-                <p><strong>Secret:</strong> <?= e($pendingSetup); ?></p>
+                <p class="modal-secret"><strong>Secret:</strong> <?= e($pendingSetup); ?></p>
                 <form action="<?= e(url_for('profile')); ?>" method="post" class="form-grid">
                     <input type="hidden" name="action" value="confirm_totp">
                     <label>6-digit code
@@ -411,20 +424,42 @@ $brandInitials = brand_initials($company);
             </div>
         </div>
     <?php endif; ?>
-    <script src="<?= e(url_for('static/js/qrcode.js')); ?>"></script>
-    <script>
-    (function(){
-        const modal = document.querySelector('[data-modal=\"totp\"]');
-        const close = modal ? modal.querySelector('[data-close-modal]') : null;
-        if(modal && close){
-            close.addEventListener('click', function(){ window.location = '<?= e(url_for('profile')); ?>?cancel_totp=1'; });
-        }
-        <?php if ($pendingSetup && $totpUri): ?>
-        if(modal){
-            SimpleQR(modal.querySelector('#qr-container'), '<?= e($totpUri); ?>');
-        }
-        <?php endif; ?>
-    })();
-    </script>
-</body>
-</html>
+</section>
+<?php
+$content = ob_get_clean();
+
+if ($pendingSetup) {
+    $pageScripts[] = url_for('static/js/qrcode.js');
+    $cancelUrl = json_encode(url_for('profile') . '?cancel_totp=1', JSON_THROW_ON_ERROR);
+    $inlineScripts[] = <<<JS
+document.addEventListener('DOMContentLoaded', () => {
+    const modal = document.querySelector('[data-modal="totp"]');
+    if (!modal) {
+        return;
+    }
+    const close = modal.querySelector('[data-close-modal]');
+    if (close) {
+        close.addEventListener('click', () => {
+            window.location = {$cancelUrl};
+        });
+    }
+    const qrContainer = modal.querySelector('#qr-container');
+    const qrValue = modal.getAttribute('data-qr');
+    if (qrValue && window.SimpleQR && qrContainer) {
+        SimpleQR(qrContainer, qrValue);
+    }
+});
+JS;
+}
+
+$inlineScripts[] = <<<JS
+document.addEventListener('DOMContentLoaded', () => {
+    const toggles = document.querySelectorAll('.notification-group input[type="checkbox"]');
+    toggles.forEach((toggle) => {
+        toggle.addEventListener('focus', () => toggle.closest('label').classList.add('is-focused'));
+        toggle.addEventListener('blur', () => toggle.closest('label').classList.remove('is-focused'));
+    });
+});
+JS;
+
+include __DIR__ . '/templates/partials/dashboard_layout.php';
