@@ -149,27 +149,27 @@ $pageScripts[] = [
                     <p>Key metrics across your workspace.</p>
                 </div>
             </header>
-            <div class="grid cols-2">
-                <div class="kpi">
-                    <div class="label">Active services</div>
-                    <div class="value"><?= $activeServices; ?></div>
-                    <div class="small subtle">Services available to sell</div>
-                </div>
-                <div class="kpi">
-                    <div class="label">Clients</div>
-                    <div class="value"><?= $clientCount; ?></div>
-                    <div class="small subtle">Accounts in the portal</div>
-                </div>
-                <div class="kpi">
-                    <div class="label">Open tickets</div>
-                    <div class="value"><?= $openTickets; ?></div>
-                    <div class="small subtle">Awaiting response</div>
-                </div>
-                <div class="kpi">
-                    <div class="label">Pending invoices</div>
-                    <div class="value"><?= $pendingInvoices; ?></div>
-                    <div class="small subtle">Need attention</div>
-                </div>
+            <div class="metric-grid metric-grid--linked">
+                <a class="metric-tile metric-tile--link" href="<?= e(url_for('admin/services')); ?>">
+                    <span class="metric-label">Active services</span>
+                    <strong class="metric-value"><?= $activeServices; ?></strong>
+                    <span class="metric-description">Services available to sell</span>
+                </a>
+                <a class="metric-tile metric-tile--link" href="<?= e(url_for('admin/clients')); ?>">
+                    <span class="metric-label">Clients</span>
+                    <strong class="metric-value"><?= $clientCount; ?></strong>
+                    <span class="metric-description">Accounts in the portal</span>
+                </a>
+                <a class="metric-tile metric-tile--link" href="<?= e(url_for('admin/tickets')); ?>">
+                    <span class="metric-label">Open tickets</span>
+                    <strong class="metric-value"><?= $openTickets; ?></strong>
+                    <span class="metric-description">Awaiting response</span>
+                </a>
+                <a class="metric-tile metric-tile--link" href="<?= e(url_for('admin/invoices')); ?>">
+                    <span class="metric-label">Pending invoices</span>
+                    <strong class="metric-value"><?= $pendingInvoices; ?></strong>
+                    <span class="metric-description">Need attention</span>
+                </a>
             </div>
         </article>
         <article class="card">

@@ -14,6 +14,7 @@ return [
         'stripe_publishable_key' => '',
         'stripe_secret_key' => '',
         'paypal_client_id' => '',
-        'paypal_client_secret' => ''
+        'paypal_client_secret' => '',
+        'paypal_mode' => 'sandbox'
     ]
 ];

@@ -272,6 +272,11 @@ if (is_post()) {
                 set_setting('stripe_secret_key', $_POST['stripe_secret_key'] ?? '');
                 set_setting('paypal_client_id', $_POST['paypal_client_id'] ?? '');
                 set_setting('paypal_client_secret', $_POST['paypal_client_secret'] ?? '');
+                $paypalMode = strtolower($_POST['paypal_mode'] ?? 'sandbox');
+                if (!in_array($paypalMode, ['sandbox', 'live'], true)) {
+                    $paypalMode = 'sandbox';
+                }
+                set_setting('paypal_mode', $paypalMode);
                 flash('success', 'Payment settings saved.');
                 break;
             case 'create_admin_user':
@@ -371,6 +376,140 @@ if (is_post()) {
 
                 flash('success', 'Thanks! Your order has been submitted. We will follow up shortly.');
                 break;
+            case 'create_paypal_order':
+                require_login();
+                header('Content-Type: application/json');
+                $invoiceId = (int) ($_POST['invoice_id'] ?? 0);
+                try {
+                    if ($invoiceId <= 0) {
+                        throw new RuntimeException('Invalid invoice specified.');
+                    }
+                    $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, s.name AS service_name FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id WHERE i.id = :id AND i.user_id = :user LIMIT 1');
+                    $invoiceStmt->execute(['id' => $invoiceId, 'user' => $user['id']]);
+                    $invoice = $invoiceStmt->fetch();
+                    if (!$invoice) {
+                        throw new RuntimeException('Invoice not found.');
+                    }
+                    if (($invoice['status'] ?? '') === 'paid' || ($invoice['payment_status'] ?? '') === 'paid') {
+                        throw new RuntimeException('This invoice has already been paid.');
+                    }
+                    $paymentMethod = $invoice['payment_method'] ?? 'paypal';
+                    if ($paymentMethod !== 'paypal') {
+                        throw new RuntimeException('This invoice is not configured for PayPal payments.');
+                    }
+                    $amount = (float) $invoice['total'];
+                    if ($amount <= 0) {
+                        throw new RuntimeException('Invoice total must be greater than zero.');
+                    }
+                    $value = number_format($amount, 2, '.', '');
+                    $currency = currency_code();
+                    $company = get_setting('company_name', 'Service Portal');
+                    $brandName = function_exists('mb_substr') ? mb_substr($company, 0, 120) : substr($company, 0, 120);
+                    $description = sprintf('Invoice #%d – %s', (int) $invoice['id'], $invoice['service_name']);
+                    $payload = [
+                        'intent' => 'CAPTURE',
+                        'purchase_units' => [[
+                            'reference_id' => 'INV-' . (int) $invoice['id'],
+                            'description' => $description,
+                            'amount' => [
+                                'currency_code' => $currency,
+                                'value' => $value,
+                            ],
+                        ]],
+                        'application_context' => [
+                            'brand_name' => $brandName,
+                            'landing_page' => 'NO_PREFERENCE',
+                            'shipping_preference' => 'NO_SHIPPING',
+                            'user_action' => 'PAY_NOW',
+                        ],
+                    ];
+                    $response = paypal_api_request('POST', 'v2/checkout/orders', $payload);
+                    $orderId = $response['id'] ?? null;
+                    if (!$orderId) {
+                        throw new RuntimeException('PayPal did not return an order reference.');
+                    }
+                    $update = $pdo->prepare('UPDATE orders SET payment_reference = :reference, updated_at = :updated WHERE id = :id AND user_id = :user');
+                    $update->execute([
+                        'reference' => $orderId,
+                        'updated' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+                        'id' => $invoice['order_id'],
+                        'user' => $user['id'],
+                    ]);
+                    echo json_encode(['orderID' => $orderId], JSON_THROW_ON_ERROR);
+                } catch (Throwable $e) {
+                    http_response_code(400);
+                    echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
+                }
+                exit;
+            case 'capture_paypal_order':
+                require_login();
+                header('Content-Type: application/json');
+                $invoiceId = (int) ($_POST['invoice_id'] ?? 0);
+                $paypalOrderId = trim($_POST['paypal_order_id'] ?? '');
+                try {
+                    if ($invoiceId <= 0 || $paypalOrderId === '') {
+                        throw new RuntimeException('Payment details were incomplete.');
+                    }
+                    $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, s.name AS service_name, u.email, u.name FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id JOIN users u ON u.id = i.user_id WHERE i.id = :id AND i.user_id = :user LIMIT 1');
+                    $invoiceStmt->execute(['id' => $invoiceId, 'user' => $user['id']]);
+                    $invoice = $invoiceStmt->fetch();
+                    if (!$invoice) {
+                        throw new RuntimeException('Invoice not found.');
+                    }
+                    if (($invoice['status'] ?? '') === 'paid' || ($invoice['payment_status'] ?? '') === 'paid') {
+                        throw new RuntimeException('This invoice has already been paid.');
+                    }
+                    if (($invoice['payment_method'] ?? 'paypal') !== 'paypal') {
+                        throw new RuntimeException('This invoice is not configured for PayPal payments.');
+                    }
+                    $result = paypal_api_request('POST', 'v2/checkout/orders/' . urlencode($paypalOrderId) . '/capture', []);
+                    $captures = $result['purchase_units'][0]['payments']['captures'] ?? [];
+                    $captureId = null;
+                    foreach ($captures as $capture) {
+                        if (($capture['status'] ?? '') === 'COMPLETED') {
+                            $captureId = $capture['id'] ?? null;
+                            break;
+                        }
+                    }
+                    if (!$captureId) {
+                        throw new RuntimeException('PayPal has not confirmed the payment.');
+                    }
+                    $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+                    $pdo->beginTransaction();
+                    $pdo->prepare('UPDATE orders SET payment_status = "paid", payment_reference = :reference, updated_at = :updated WHERE id = :id AND user_id = :user')
+                        ->execute([
+                            'reference' => $captureId,
+                            'updated' => $now,
+                            'id' => $invoice['order_id'],
+                            'user' => $user['id'],
+                        ]);
+                    $pdo->prepare('UPDATE invoices SET status = "paid", paid_at = :paid_at, updated_at = :updated WHERE id = :id AND user_id = :user')
+                        ->execute([
+                            'paid_at' => $now,
+                            'updated' => $now,
+                            'id' => $invoice['id'],
+                            'user' => $user['id'],
+                        ]);
+                    $pdo->commit();
+
+                    $paymentReplacements = [
+                        '{{name}}' => $invoice['name'] ?? $user['name'],
+                        '{{service}}' => $invoice['service_name'],
+                        '{{invoice}}' => (string) $invoice['id'],
+                        '{{company}}' => get_setting('company_name', 'Service Portal'),
+                    ];
+                    $paymentBody = sprintf("Hi %s,\n\nWe've recorded your payment for invoice #%s covering %s.", $invoice['name'] ?? $user['name'], $invoice['id'], $invoice['service_name']);
+                    send_templated_email($pdo, 'invoice_payment_success', $paymentReplacements, $invoice['email'] ?? $user['email'], 'Payment received', $paymentBody);
+                    record_notification($pdo, (int) $user['id'], 'Invoice #' . $invoice['id'] . ' paid successfully.', url_for('dashboard/orders'));
+                    echo json_encode(['status' => 'paid', 'capture' => $captureId], JSON_THROW_ON_ERROR);
+                } catch (Throwable $e) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    http_response_code(400);
+                    echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
+                }
+                exit;
             case 'update_order_status':
                 require_login('admin');
                 $orderId = (int) ($_POST['order_id'] ?? 0);
@@ -656,7 +795,7 @@ $orderStmt = $pdo->prepare('SELECT o.*, s.name AS service_name FROM orders o JOI
 $orderStmt->execute(['user' => $user['id']]);
 $orders = $orderStmt->fetchAll();
 
-$invoiceStmt = $pdo->prepare('SELECT i.*, s.name AS service_name FROM invoices i JOIN services s ON s.id = i.service_id WHERE i.user_id = :user ORDER BY i.created_at DESC');
+$invoiceStmt = $pdo->prepare('SELECT i.*, s.name AS service_name, o.payment_method, o.payment_status FROM invoices i JOIN services s ON s.id = i.service_id LEFT JOIN orders o ON o.id = i.order_id WHERE i.user_id = :user ORDER BY i.created_at DESC');
 $invoiceStmt->execute(['user' => $user['id']]);
 $invoices = $invoiceStmt->fetchAll();
 

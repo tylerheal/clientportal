@@ -150,9 +150,42 @@ function e(?string $value): string
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
 }
 
+function currency_code(): string
+{
+    $raw = strtoupper(preg_replace('/[^A-Z]/', '', (string) get_setting('currency_code', 'GBP')));
+    return strlen($raw) === 3 ? $raw : 'GBP';
+}
+
 function format_currency(float $amount): string
 {
-    return '£' . number_format($amount, 2);
+    $code = currency_code();
+    if (class_exists('NumberFormatter')) {
+        $locale = class_exists('Locale') ? Locale::getDefault() : 'en_GB';
+        static $formatters = [];
+        $key = $locale . '|' . $code;
+        if (!isset($formatters[$key])) {
+            $formatter = new NumberFormatter($locale, NumberFormatter::CURRENCY);
+            $formatters[$key] = $formatter;
+        }
+        $formatter = $formatters[$key] ?? null;
+        if ($formatter instanceof NumberFormatter) {
+            $formatted = $formatter->formatCurrency($amount, $code);
+            if ($formatted !== false) {
+                return $formatted;
+            }
+        }
+    }
+
+    $symbolMap = [
+        'GBP' => '£',
+        'USD' => '$',
+        'EUR' => '€',
+        'AUD' => 'A$',
+        'CAD' => 'C$',
+        'NZD' => 'NZ$',
+    ];
+    $symbol = $symbolMap[$code] ?? '';
+    return $symbol . number_format($amount, 2);
 }
 
 function get_setting(string $key, ?string $default = null): ?string
@@ -175,6 +208,128 @@ function set_setting(string $key, string $value): void
     $stmt = $pdo->prepare('REPLACE INTO settings (key, value) VALUES (:key, :value)');
     $stmt->execute(['key' => $key, 'value' => $value]);
     unset($GLOBALS['__settings_cache']);
+}
+
+function paypal_mode(): string
+{
+    $mode = strtolower(get_setting('paypal_mode', 'sandbox'));
+    return $mode === 'live' ? 'live' : 'sandbox';
+}
+
+function paypal_api_base(): string
+{
+    return paypal_mode() === 'live'
+        ? 'https://api-m.paypal.com'
+        : 'https://api-m.sandbox.paypal.com';
+}
+
+function paypal_credentials(): array
+{
+    $clientId = trim(get_setting('paypal_client_id', ''));
+    $secret = trim(get_setting('paypal_client_secret', ''));
+    if ($clientId === '' || $secret === '') {
+        throw new RuntimeException('PayPal credentials are not configured.');
+    }
+    return [$clientId, $secret];
+}
+
+function paypal_access_token(bool $forceRefresh = false): string
+{
+    static $cache = ['token' => null, 'expires' => 0];
+    if (!$forceRefresh && $cache['token'] && $cache['expires'] > time()) {
+        return $cache['token'];
+    }
+
+    if (!function_exists('curl_init')) {
+        throw new RuntimeException('The cURL extension is required for PayPal integration.');
+    }
+
+    [$clientId, $secret] = paypal_credentials();
+    $endpoint = paypal_api_base() . '/v1/oauth2/token';
+    $ch = curl_init($endpoint);
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_USERPWD => $clientId . ':' . $secret,
+        CURLOPT_POSTFIELDS => 'grant_type=client_credentials',
+        CURLOPT_HTTPHEADER => ['Accept: application/json', 'Accept-Language: en_US'],
+    ]);
+    $response = curl_exec($ch);
+    if ($response === false) {
+        $error = curl_error($ch);
+        curl_close($ch);
+        throw new RuntimeException('PayPal authentication failed: ' . $error);
+    }
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    $data = json_decode($response, true);
+    if (!is_array($data)) {
+        throw new RuntimeException('Unexpected response from PayPal authentication.');
+    }
+    if ($status >= 400) {
+        $message = $data['error_description'] ?? $data['error'] ?? 'PayPal authentication failed.';
+        throw new RuntimeException($message);
+    }
+    $token = $data['access_token'] ?? null;
+    if (!$token) {
+        throw new RuntimeException('PayPal did not return an access token.');
+    }
+    $expires = (int) ($data['expires_in'] ?? 0);
+    $cache = [
+        'token' => $token,
+        'expires' => time() + max($expires - 60, 60),
+    ];
+    return $token;
+}
+
+function paypal_api_request(string $method, string $path, ?array $payload = null): array
+{
+    $attempts = 0;
+    do {
+        if (!function_exists('curl_init')) {
+            throw new RuntimeException('The cURL extension is required for PayPal integration.');
+        }
+        $token = paypal_access_token($attempts > 0);
+        $url = str_starts_with($path, 'http') ? $path : paypal_api_base() . '/' . ltrim($path, '/');
+        $headers = [
+            'Authorization: Bearer ' . $token,
+            'Content-Type: application/json',
+            'Accept: application/json',
+        ];
+        $options = [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CUSTOMREQUEST => strtoupper($method),
+            CURLOPT_HTTPHEADER => $headers,
+        ];
+        if ($payload !== null) {
+            $json = json_encode($payload, JSON_THROW_ON_ERROR);
+            $options[CURLOPT_POSTFIELDS] = $json;
+        }
+        $ch = curl_init($url);
+        curl_setopt_array($ch, $options);
+        $response = curl_exec($ch);
+        if ($response === false) {
+            $error = curl_error($ch);
+            curl_close($ch);
+            throw new RuntimeException('PayPal request failed: ' . $error);
+        }
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        $data = json_decode($response, true);
+        if ($status === 401 && $attempts === 0) {
+            $attempts++;
+            continue;
+        }
+        if ($status >= 400) {
+            $message = $data['message'] ?? $data['details'][0]['description'] ?? $data['error_description'] ?? 'PayPal request failed.';
+            throw new RuntimeException($message);
+        }
+        return is_array($data) ? $data : [];
+    } while ($attempts < 2);
+
+    throw new RuntimeException('PayPal request failed with repeated authentication errors.');
 }
 
 function theme_styles(): string

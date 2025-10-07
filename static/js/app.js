@@ -11,6 +11,7 @@
         data: { labels: [], series: [] },
         currency: { prefix: '', suffix: '' },
     };
+    let closeInvoiceModal = () => {};
 
     const canvas = doc.getElementById('ordersChart');
     if (canvas) {
@@ -56,6 +57,7 @@
         if (event.key === 'Escape') {
             closeMobileMenu();
             menus.forEach((menu) => menu.classList.remove('open'));
+            closeInvoiceModal();
         }
     });
 
@@ -329,6 +331,218 @@
         })();
         setDashboardData(sample);
     };
+
+    const invoiceModal = doc.querySelector('[data-invoice-modal]');
+    if (invoiceModal) {
+        const actionEndpoint = invoiceModal.getAttribute('data-action') || 'dashboard.php';
+        const numberEl = invoiceModal.querySelector('[data-invoice-number]');
+        const summaryEl = invoiceModal.querySelector('[data-invoice-summary]');
+        const feedbackEl = invoiceModal.querySelector('[data-invoice-feedback]');
+        const container = invoiceModal.querySelector('[data-paypal-container]');
+        const closeBtn = invoiceModal.querySelector('[data-invoice-close]');
+        let paypalButtons = null;
+        const formatMoney = (amount, currency) => {
+            try {
+                return new Intl.NumberFormat(undefined, {
+                    style: 'currency',
+                    currency,
+                    minimumFractionDigits: 2,
+                }).format(amount);
+            } catch (error) {
+                return `${currency} ${amount.toFixed(2)}`;
+            }
+        };
+
+        const waitForPayPal = () => new Promise((resolve, reject) => {
+            if (window.paypal && typeof window.paypal.Buttons === 'function') {
+                resolve(window.paypal);
+                return;
+            }
+            let attempts = 0;
+            const timer = window.setInterval(() => {
+                attempts += 1;
+                if (window.paypal && typeof window.paypal.Buttons === 'function') {
+                    window.clearInterval(timer);
+                    resolve(window.paypal);
+                } else if (attempts > 40) {
+                    window.clearInterval(timer);
+                    reject(new Error('PayPal SDK did not load.'));
+                }
+            }, 150);
+        });
+
+        const postAction = (action, payload) => {
+            const formData = new FormData();
+            formData.append('action', action);
+            formData.append('redirect', '');
+            Object.entries(payload).forEach(([key, value]) => {
+                if (value != null) {
+                    formData.append(key, value);
+                }
+            });
+            return fetch(actionEndpoint, {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            }).then(async (response) => {
+                let data = null;
+                try {
+                    data = await response.json();
+                } catch (error) {
+                    throw new Error('Unexpected response from the server.');
+                }
+                if (!response.ok || (data && data.error)) {
+                    throw new Error((data && data.error) || 'Payment could not be processed.');
+                }
+                return data;
+            });
+        };
+
+        const markInvoicePaid = (invoiceId) => {
+            const status = doc.querySelector(`[data-invoice-status="${invoiceId}"]`);
+            if (status) {
+                status.textContent = 'Paid';
+                status.className = 'badge badge--paid';
+            }
+            const trigger = doc.querySelector(`[data-invoice-pay][data-invoice-id="${invoiceId}"]`);
+            if (trigger) {
+                const badge = doc.createElement('span');
+                badge.className = 'badge badge--paid';
+                badge.textContent = 'Paid';
+                trigger.replaceWith(badge);
+            }
+        };
+
+        const renderButtons = (details) => {
+            if (!container) {
+                return;
+            }
+            container.innerHTML = '';
+            if (paypalButtons && typeof paypalButtons.close === 'function') {
+                paypalButtons.close();
+            }
+            waitForPayPal()
+                .then((paypal) => {
+                    paypalButtons = paypal.Buttons({
+                        style: { layout: 'vertical' },
+                        createOrder: () => {
+                            if (feedbackEl) {
+                                feedbackEl.textContent = 'Creating PayPal order…';
+                            }
+                            return postAction('create_paypal_order', { invoice_id: details.id })
+                                .then((data) => data.orderID)
+                                .catch((error) => {
+                                    if (feedbackEl) {
+                                        feedbackEl.textContent = error.message || String(error);
+                                    }
+                                    throw error;
+                                });
+                        },
+                        onApprove: (data) => {
+                            if (feedbackEl) {
+                                feedbackEl.textContent = 'Capturing payment…';
+                            }
+                            return postAction('capture_paypal_order', {
+                                invoice_id: details.id,
+                                paypal_order_id: data.orderID,
+                            })
+                                .then(() => {
+                                    markInvoicePaid(details.id);
+                                    if (feedbackEl) {
+                                        feedbackEl.textContent = 'Payment complete. Thank you!';
+                                    }
+                                    window.setTimeout(() => {
+                                        closeInvoiceModal();
+                                    }, 1500);
+                                })
+                                .catch((error) => {
+                                    if (feedbackEl) {
+                                        feedbackEl.textContent = error.message || String(error);
+                                    }
+                                });
+                        },
+                        onCancel: () => {
+                            if (feedbackEl) {
+                                feedbackEl.textContent = 'Payment was cancelled before completion.';
+                            }
+                        },
+                        onError: (error) => {
+                            if (feedbackEl) {
+                                feedbackEl.textContent = error.message || 'PayPal encountered an issue.';
+                            }
+                        },
+                    });
+                    if (paypalButtons && paypalButtons.isEligible()) {
+                        return paypalButtons.render(container);
+                    }
+                    throw new Error('PayPal checkout is not available.');
+                })
+                .catch((error) => {
+                    if (feedbackEl) {
+                        feedbackEl.textContent = error.message || 'Unable to load PayPal checkout.';
+                    }
+                });
+        };
+
+        const openInvoiceModal = (details) => {
+            invoiceModal.hidden = false;
+            invoiceModal.classList.add('open');
+            if (numberEl) {
+                numberEl.textContent = `#${details.id}`;
+            }
+            if (summaryEl) {
+                const money = formatMoney(details.amount, details.currency || 'GBP');
+                summaryEl.textContent = `${details.service} · ${money}`;
+            }
+            if (feedbackEl) {
+                feedbackEl.textContent = '';
+            }
+            renderButtons(details);
+        };
+
+        closeInvoiceModal = () => {
+            if (!invoiceModal || invoiceModal.hidden) {
+                return;
+            }
+            invoiceModal.hidden = true;
+            invoiceModal.classList.remove('open');
+            if (feedbackEl) {
+                feedbackEl.textContent = '';
+            }
+            if (container) {
+                container.innerHTML = '';
+            }
+            if (paypalButtons && typeof paypalButtons.close === 'function') {
+                paypalButtons.close();
+            }
+        };
+
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                closeInvoiceModal();
+            });
+        }
+        invoiceModal.addEventListener('click', (event) => {
+            if (event.target === invoiceModal) {
+                closeInvoiceModal();
+            }
+        });
+
+        const triggers = Array.from(doc.querySelectorAll('[data-invoice-pay]'));
+        triggers.forEach((trigger) => {
+            trigger.addEventListener('click', (event) => {
+                event.preventDefault();
+                const invoiceId = Number(trigger.getAttribute('data-invoice-id'));
+                const amount = Number(trigger.getAttribute('data-invoice-amount'));
+                const currency = trigger.getAttribute('data-invoice-currency') || 'GBP';
+                const service = trigger.getAttribute('data-invoice-service') || 'Invoice';
+                if (!invoiceId || !amount) {
+                    return;
+                }
+                openInvoiceModal({ id: invoiceId, amount, service, currency });
+            });
+        });
+    }
 
     bootstrapChart();
 

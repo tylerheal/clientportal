@@ -3,6 +3,7 @@ $stripePublishable = get_setting('stripe_publishable_key', '');
 $stripeSecret = get_setting('stripe_secret_key', '');
 $paypalClient = get_setting('paypal_client_id', '');
 $paypalSecret = get_setting('paypal_client_secret', '');
+$paypalMode = strtolower(get_setting('paypal_mode', 'sandbox')) === 'live' ? 'live' : 'sandbox';
 ?>
 <section class="page-section">
     <?php foreach (['error', 'success'] as $flashType): ?>
@@ -33,6 +34,12 @@ $paypalSecret = get_setting('paypal_client_secret', '');
             </label>
             <label>Client secret
                 <input type="text" name="paypal_client_secret" value="<?= e($paypalSecret); ?>">
+            </label>
+            <label>Environment
+                <select name="paypal_mode">
+                    <option value="sandbox"<?= $paypalMode === 'sandbox' ? ' selected' : ''; ?>>Sandbox</option>
+                    <option value="live"<?= $paypalMode === 'live' ? ' selected' : ''; ?>>Live</option>
+                </select>
             </label>
             <div class="form-actions">
                 <button type="submit" class="button button--primary">Save settings</button>

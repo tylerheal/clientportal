@@ -470,15 +470,19 @@ a:hover {
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 16px;
 }
 
 .metric-tile {
+  display: block;
   background: #10192d;
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 18px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
 .metric-label {
@@ -499,6 +503,28 @@ a:hover {
   margin: 6px 0 0;
   color: var(--muted);
   font-size: 0.85rem;
+}
+
+.metric-tile--link:hover,
+.metric-tile--link:focus-visible {
+  border-color: rgba(127, 139, 176, 0.55);
+  box-shadow: 0 16px 32px rgba(8, 12, 23, 0.45);
+  transform: translateY(-2px);
+  outline: none;
+}
+
+.metric-grid--linked .metric-tile {
+  position: relative;
+}
+
+.metric-grid--linked .metric-description {
+  color: var(--muted);
+}
+
+@media (min-width: 1280px) {
+  .metric-grid--linked {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .page-columns {
@@ -555,6 +581,10 @@ a:hover {
 
 .table tr:hover td {
   background: #0d1527;
+}
+
+.text-right {
+  text-align: right;
 }
 
 .table-empty {
@@ -1085,6 +1115,21 @@ label {
 .modal-card p {
   margin: 0;
   color: var(--muted);
+}
+
+.invoice-summary {
+  border: 1px solid var(--border);
+  background: #0c1424;
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+[data-paypal-container] {
+  margin-top: 12px;
+}
+
+[data-invoice-feedback] {
+  min-height: 1.2em;
 }
 
 .modal-secret {

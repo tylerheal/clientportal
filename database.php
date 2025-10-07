@@ -268,6 +268,8 @@ function seed_default_settings(PDO $pdo): void
         'stripe_secret_key' => '',
         'paypal_client_id' => '',
         'paypal_client_secret' => '',
+        'paypal_mode' => 'sandbox',
+        'currency_code' => 'GBP',
         'support_email' => 'support@example.com'
     ];
 
