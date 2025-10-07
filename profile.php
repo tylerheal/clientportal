@@ -457,7 +457,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const qrContainer = modal.querySelector('#qr-container');
     const qrValue = modal.getAttribute('data-qr');
     if (qrValue && window.SimpleQR && qrContainer) {
-        SimpleQR(qrContainer, qrValue);
+        SimpleQR(qrContainer, qrValue, { size: 180, colorLight: '#ffffff', colorDark: '#0b0c10' });
     }
 });
 JS;

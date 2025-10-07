@@ -135,7 +135,7 @@ function initialise_schema(PDO $pdo): void
 
     $pdo->exec('CREATE TABLE IF NOT EXISTS invoices (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        subscription_id INTEGER NOT NULL,
+        subscription_id INTEGER,
         order_id INTEGER,
         user_id INTEGER NOT NULL,
         service_id INTEGER NOT NULL,
@@ -150,6 +150,8 @@ function initialise_schema(PDO $pdo): void
         FOREIGN KEY(user_id) REFERENCES users(id),
         FOREIGN KEY(service_id) REFERENCES services(id)
     )');
+
+    ensure_nullable_invoice_subscription($pdo);
 
     $pdo->exec('CREATE TABLE IF NOT EXISTS payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -166,6 +168,65 @@ function initialise_schema(PDO $pdo): void
     seed_default_admin($pdo);
     seed_default_settings($pdo);
     seed_default_templates($pdo);
+}
+
+function ensure_nullable_invoice_subscription(PDO $pdo): void
+{
+    $stmt = $pdo->query('PRAGMA table_info(invoices)');
+    $columns = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+    $needsMigration = false;
+
+    foreach ($columns as $column) {
+        if (($column['name'] ?? '') === 'subscription_id') {
+            if ((int) ($column['notnull'] ?? 0) === 1) {
+                $needsMigration = true;
+            }
+            break;
+        }
+    }
+
+    if (!$needsMigration) {
+        return;
+    }
+
+    $pdo->exec('PRAGMA foreign_keys = OFF');
+
+    try {
+        $pdo->beginTransaction();
+        $pdo->exec('DROP TABLE IF EXISTS invoices_tmp');
+        $pdo->exec('CREATE TABLE invoices_tmp (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subscription_id INTEGER,
+            order_id INTEGER,
+            user_id INTEGER NOT NULL,
+            service_id INTEGER NOT NULL,
+            total REAL NOT NULL,
+            status TEXT NOT NULL DEFAULT "pending",
+            due_at TEXT NOT NULL,
+            paid_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(subscription_id) REFERENCES subscriptions(id),
+            FOREIGN KEY(order_id) REFERENCES orders(id),
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            FOREIGN KEY(service_id) REFERENCES services(id)
+        )');
+
+        $pdo->exec('INSERT INTO invoices_tmp (id, subscription_id, order_id, user_id, service_id, total, status, due_at, paid_at, created_at, updated_at)
+            SELECT id, subscription_id, order_id, user_id, service_id, total, status, due_at, paid_at, created_at, updated_at FROM invoices');
+
+        $pdo->exec('DROP TABLE invoices');
+        $pdo->exec('ALTER TABLE invoices_tmp RENAME TO invoices');
+        $pdo->commit();
+    } catch (\Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        $pdo->exec('DROP TABLE IF EXISTS invoices_tmp');
+        throw $e;
+    } finally {
+        $pdo->exec('PRAGMA foreign_keys = ON');
+    }
 }
 
 function seed_default_admin(PDO $pdo): void
