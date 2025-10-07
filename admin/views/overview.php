@@ -91,12 +91,12 @@ $pageScripts[] = [
     <?php endforeach; ?>
 
     <article class="card chart-card">
-        <div class="toolbar" style="justify-content: space-between;">
+        <div class="toolbar">
             <div class="range">
                 <input id="dateRangeText" value="<?= e($rangeText); ?>" readonly>
                 <button class="iconbtn" type="button" id="todayBtn" title="Today" aria-label="Jump to today">📅</button>
             </div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <div class="toolbar-actions">
                 <div class="menu" data-menu>
                     <button class="btn ghost" type="button" data-menu-toggle>Reports ▾</button>
                     <div class="dropdown">
@@ -113,7 +113,7 @@ $pageScripts[] = [
                 </div>
             </div>
         </div>
-        <div style="margin-top:14px;height:240px;">
+        <div class="chart-shell">
             <canvas
                 id="ordersChart"
                 data-dashboard='<?= $dashboardJson; ?>'
@@ -122,7 +122,7 @@ $pageScripts[] = [
                 height="200"
             ></canvas>
         </div>
-        <div class="kpis" style="margin-top:14px;">
+        <div class="kpis">
             <div class="kpi">
                 <div class="label">Revenue</div>
                 <div class="value" id="kpiRevenue"><?= e(format_currency($revenue)); ?></div>

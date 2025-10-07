@@ -10,26 +10,28 @@ $unpaidInvoices = count(array_filter($invoices, fn($invoice) => $invoice['status
             <div class="alert alert--<?= $flashType; ?>"><?= e($message); ?></div>
         <?php endif; ?>
     <?php endforeach; ?>
-    <div class="card metric-grid">
-        <div class="metric-tile">
-            <span class="metric-label">Active services</span>
-            <strong class="metric-value"><?= $activeServicesCount; ?></strong>
-            <p class="metric-description">Available to order today.</p>
-        </div>
-        <div class="metric-tile">
-            <span class="metric-label">Open orders</span>
-            <strong class="metric-value"><?= $openOrdersCount; ?></strong>
-            <p class="metric-description">Awaiting payment or fulfilment.</p>
-        </div>
-        <div class="metric-tile">
-            <span class="metric-label">Open tickets</span>
-            <strong class="metric-value"><?= $openTicketsCount; ?></strong>
-            <p class="metric-description">We’ll keep you posted.</p>
-        </div>
-        <div class="metric-tile">
-            <span class="metric-label">Unpaid invoices</span>
-            <strong class="metric-value"><?= $unpaidInvoices; ?></strong>
-            <p class="metric-description">Due for settlement.</p>
+    <div class="card">
+        <div class="metric-grid">
+            <div class="metric-tile">
+                <span class="metric-label">Active services</span>
+                <strong class="metric-value"><?= $activeServicesCount; ?></strong>
+                <p class="metric-description">Available to order today.</p>
+            </div>
+            <div class="metric-tile">
+                <span class="metric-label">Open orders</span>
+                <strong class="metric-value"><?= $openOrdersCount; ?></strong>
+                <p class="metric-description">Awaiting payment or fulfilment.</p>
+            </div>
+            <div class="metric-tile">
+                <span class="metric-label">Open tickets</span>
+                <strong class="metric-value"><?= $openTicketsCount; ?></strong>
+                <p class="metric-description">We’ll keep you posted.</p>
+            </div>
+            <div class="metric-tile">
+                <span class="metric-label">Unpaid invoices</span>
+                <strong class="metric-value"><?= $unpaidInvoices; ?></strong>
+                <p class="metric-description">Due for settlement.</p>
+            </div>
         </div>
     </div>
     <div class="page-columns">

@@ -32,47 +32,45 @@ $inlineScripts = $inlineScripts ?? [];
     <style><?= theme_styles(); ?></style>
 </head>
 <body class="dashboard-body <?= e($bodyClassAttr); ?>">
-    <div class="layout portal-layout dashboard-layout">
-        <aside class="sidebar portal-sidebar dashboard-sidebar" data-sidebar>
-            <div class="sidebar-inner">
-                <div class="brand sidebar-brand">
-                    <div class="sidebar-logo">
-                        <?php if ($logo): ?>
-                            <img src="<?= e($logo); ?>" alt="<?= e($company); ?> logo">
-                        <?php else: ?>
-                            <span class="sidebar-logo--placeholder" aria-hidden="true"><?= e($brandInitials); ?></span>
-                        <?php endif; ?>
-                    </div>
-                    <span><?= e($company); ?></span>
+    <div class="layout" data-layout>
+        <aside class="sidebar" data-sidebar>
+            <div class="brand">
+                <div class="sidebar-logo">
+                    <?php if ($logo): ?>
+                        <img src="<?= e($logo); ?>" alt="<?= e($company); ?> logo">
+                    <?php else: ?>
+                        <span class="sidebar-logo--placeholder" aria-hidden="true"><?= e($brandInitials); ?></span>
+                    <?php endif; ?>
                 </div>
-                <nav class="nav sidebar-nav" aria-label="Primary">
-                    <?php foreach ($sidebar as $item): ?>
-                        <?php if (($item['type'] ?? 'link') === 'group'): ?>
-                            <div class="group sidebar-group"><?= e($item['label']); ?></div>
-                            <?php continue; ?>
-                        <?php endif; ?>
-                        <?php $isActive = ($activeKey && ($item['key'] ?? '') === $activeKey) || (!empty($item['current'])); ?>
-                        <a href="<?= e($item['href']); ?>" class="nav-link sidebar-link<?= $isActive ? ' active sidebar-link--active' : ''; ?>">
-                            <span class="sidebar-icon" aria-hidden="true"></span>
-                            <span><?= e($item['label']); ?></span>
-                        </a>
-                    <?php endforeach; ?>
-                </nav>
-                <div class="sidebar-footer">
-                    <a class="sidebar-footer-link" href="<?= e(url_for('profile')); ?>">Profile &amp; security</a>
-                    <a class="sidebar-footer-link" href="<?= e(url_for('logout')); ?>">Sign out</a>
-                </div>
+                <span><?= e($company); ?></span>
+            </div>
+            <nav class="nav" aria-label="Primary navigation">
+                <?php foreach ($sidebar as $item): ?>
+                    <?php if (($item['type'] ?? 'link') === 'group'): ?>
+                        <div class="group"><?= e($item['label']); ?></div>
+                        <?php continue; ?>
+                    <?php endif; ?>
+                    <?php $isActive = ($activeKey && ($item['key'] ?? '') === $activeKey) || (!empty($item['current'])); ?>
+                    <a href="<?= e($item['href']); ?>" class="<?= $isActive ? 'active' : ''; ?>">
+                        <span class="sidebar-icon" aria-hidden="true"></span>
+                        <span><?= e($item['label']); ?></span>
+                    </a>
+                <?php endforeach; ?>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="<?= e(url_for('profile')); ?>">Profile &amp; security</a>
+                <a href="<?= e(url_for('logout')); ?>">Sign out</a>
             </div>
         </aside>
-        <div class="main portal-main dashboard-main">
-            <header class="topbar portal-topbar dashboard-header">
-                <button type="button" class="iconbtn portal-icon-button sidebar-toggle" id="menuBtn" data-mobile-menu-toggle aria-label="Toggle navigation">☰</button>
-                <form action="<?= e($searchAction); ?>" method="get" class="search portal-search" role="search">
+        <div class="main">
+            <header class="topbar">
+                <button type="button" class="iconbtn" id="menuBtn" data-mobile-menu-toggle aria-label="Toggle navigation">☰</button>
+                <form action="<?= e($searchAction); ?>" method="get" class="search" role="search">
                     <input type="search" name="q" value="<?= e($_GET['q'] ?? ''); ?>" placeholder="Search…" aria-label="Search the portal">
                 </form>
-                <button type="button" class="iconbtn portal-icon-button" aria-label="Help">?</button>
+                <button type="button" class="iconbtn" aria-label="Help">?</button>
                 <details class="notification-details" data-notifications>
-                    <summary class="iconbtn portal-icon-button notification-button<?= $unreadCount ? ' notification-button--active' : ''; ?>" aria-label="Notifications">
+                    <summary class="iconbtn notification-button<?= $unreadCount ? ' notification-button--active' : ''; ?>" aria-label="Notifications">
                         <span aria-hidden="true">🔔</span>
                         <?php if ($unreadCount): ?>
                             <span class="notification-count"><?= $unreadCount; ?></span>
@@ -102,26 +100,24 @@ $inlineScripts = $inlineScripts ?? [];
                         </ul>
                     </div>
                 </details>
-                <a class="profile-button avatar" href="<?= e(url_for('profile')); ?>" aria-label="Profile &amp; security">
-                    <span class="profile-avatar">
-                        <?php if (!empty($user['avatar_url'])): ?>
-                            <img src="<?= e($user['avatar_url']); ?>" alt="<?= e($user['name'] ?? 'Profile'); ?>" onerror="this.remove();">
-                        <?php elseif (!empty($user['name'])): ?>
-                            <span aria-hidden="true"><?= e(function_exists('mb_substr') ? mb_substr($user['name'], 0, 1) : substr($user['name'], 0, 1)); ?></span>
-                        <?php else: ?>
-                            <span aria-hidden="true"><?= e($brandInitials); ?></span>
-                        <?php endif; ?>
-                    </span>
+                <a class="avatar" href="<?= e(url_for('profile')); ?>" aria-label="Profile &amp; security">
+                    <?php if (!empty($user['avatar_url'])): ?>
+                        <img src="<?= e($user['avatar_url']); ?>" alt="<?= e($user['name'] ?? 'Profile'); ?>" onerror="this.remove();">
+                    <?php elseif (!empty($user['name'])): ?>
+                        <span aria-hidden="true"><?= e(function_exists('mb_substr') ? mb_substr($user['name'], 0, 1) : substr($user['name'], 0, 1)); ?></span>
+                    <?php else: ?>
+                        <span aria-hidden="true"><?= e($brandInitials); ?></span>
+                    <?php endif; ?>
                 </a>
             </header>
-            <main class="main-content portal-content dashboard-content">
+            <main>
                 <?= $content ?? ''; ?>
             </main>
         </div>
     </div>
-    <div class="mobile-menu portal-mobile-menu" id="mobileMenu" data-mobile-menu>
-        <div class="mobile-sidebar portal-mobile-sidebar">
-            <div class="brand sidebar-brand">
+    <div class="mobile-menu" id="mobileMenu" data-mobile-menu>
+        <div class="mobile-sidebar">
+            <div class="brand">
                 <div class="sidebar-logo">
                     <?php if ($logo): ?>
                         <img src="<?= e($logo); ?>" alt="<?= e($company); ?> logo">
@@ -131,7 +127,7 @@ $inlineScripts = $inlineScripts ?? [];
                 </div>
                 <span><?= e($company); ?></span>
             </div>
-            <nav class="mobile-nav" aria-label="Mobile">
+            <nav class="mobile-nav" aria-label="Mobile navigation">
                 <?php foreach ($sidebar as $item): ?>
                     <?php if (($item['type'] ?? 'link') === 'group') { continue; } ?>
                     <?php $isActive = ($activeKey && ($item['key'] ?? '') === $activeKey) || (!empty($item['current'])); ?>
