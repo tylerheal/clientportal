@@ -186,11 +186,9 @@ $pendingSetup = $_SESSION['totp_setup']['secret'] ?? null;
 $totpUri = $pendingSetup ? sprintf('otpauth://totp/%s:%s?secret=%s&issuer=%s', rawurlencode(get_setting('company_name', 'Service Portal')), rawurlencode($user['email']), $pendingSetup, rawurlencode(get_setting('company_name', 'Service Portal'))) : null;
 $recoveryCodes = $user['totp_recovery_codes'] ? json_decode($user['totp_recovery_codes'], true) : [];
 $company = get_setting('company_name', 'Service Portal');
-$logo = get_setting('brand_logo_url', '');
+$logoSetting = get_setting('brand_logo_url', '');
+$logo = $logoSetting !== '' ? asset_url($logoSetting) : null;
 $brandInitials = brand_initials($company);
-if ($logo === '') {
-    $logo = null;
-}
 
 ?>
 <!doctype html>

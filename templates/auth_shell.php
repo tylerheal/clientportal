@@ -3,7 +3,8 @@ if (!defined('APP_BOOTSTRAPPED')) {
     require __DIR__ . '/../bootstrap.php';
 }
 $company = get_setting('company_name', 'Service Portal');
-$logo = get_setting('brand_logo_url', '');
+$logoSetting = get_setting('brand_logo_url', '');
+$logo = $logoSetting !== '' ? asset_url($logoSetting) : '';
 $primary = get_setting('brand_primary_color', '#2a6dff');
 $view = $authView ?? 'login';
 $baseAction = [
@@ -25,10 +26,10 @@ $baseAction = [
     <div class="auth-wrapper">
         <header class="auth-brand">
             <div class="auth-logo" style="--brand-primary: <?= e($primary); ?>;">
-                <?php if ($logo): ?>
+                <?php if ($logo !== ''): ?>
                     <img src="<?= e($logo); ?>" alt="<?= e($company); ?> logo">
                 <?php else: ?>
-                    <span><?= strtoupper(substr($company, 0, 1)); ?></span>
+                    <span><?= e(brand_initials($company)); ?></span>
                 <?php endif; ?>
             </div>
             <h1><?= e($company); ?></h1>

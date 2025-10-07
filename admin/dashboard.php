@@ -14,6 +14,7 @@ $adminSidebar = [
     ['key' => 'automations', 'label' => 'Automations', 'href' => url_for('admin/automations')],
     ['key' => 'payments', 'label' => 'Payments', 'href' => url_for('admin/payments')],
     ['key' => 'administrators', 'label' => 'Admins', 'href' => url_for('admin/administrators')],
+    ['key' => 'settings', 'label' => 'Settings', 'href' => url_for('admin/settings')],
 ];
 
 $activeKey = $view === 'ticket' ? 'tickets' : $view;
@@ -29,6 +30,7 @@ $pageTitleMap = [
     'automations' => 'Automations',
     'payments' => 'Payments',
     'administrators' => 'Administrators',
+    'settings' => 'Settings',
 ];
 $pageTitle = $pageTitleMap[$view] ?? 'Admin overview';
 if ($view === 'ticket' && isset($selectedTicket['id'])) {
@@ -67,6 +69,9 @@ switch ($view) {
         break;
     case 'administrators':
         include __DIR__ . '/views/administrators.php';
+        break;
+    case 'settings':
+        include __DIR__ . '/views/settings.php';
         break;
     case 'overview':
     default:

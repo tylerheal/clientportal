@@ -151,13 +151,74 @@ if (is_post()) {
                 break;
             case 'update_settings':
                 require_login('admin');
+                $companyName = trim($_POST['company_name'] ?? '');
+                $primaryColor = trim($_POST['brand_primary_color'] ?? '#3b82f6');
+                $fontFamily = trim($_POST['brand_font_family'] ?? 'Inter, sans-serif');
+                $supportEmail = trim($_POST['support_email'] ?? '');
+                $logoInput = trim($_POST['brand_logo_url'] ?? '');
+                $clearLogo = isset($_POST['clear_logo']) && $_POST['clear_logo'] === '1';
+                $currentLogo = get_setting('brand_logo_url', '');
+                $logoPath = $clearLogo ? '' : $logoInput;
+
+                if (!empty($_FILES['brand_logo_file']) && ($_FILES['brand_logo_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                    $file = $_FILES['brand_logo_file'];
+                    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                        throw new RuntimeException('Unable to upload logo. Please try again.');
+                    }
+
+                    $tmp = $file['tmp_name'] ?? '';
+                    if ($tmp === '' || !is_uploaded_file($tmp)) {
+                        throw new RuntimeException('Invalid logo upload.');
+                    }
+
+                    $mime = mime_content_type($tmp) ?: '';
+                    $allowed = [
+                        'image/png' => 'png',
+                        'image/jpeg' => 'jpg',
+                        'image/jpg' => 'jpg',
+                        'image/webp' => 'webp',
+                        'image/svg+xml' => 'svg',
+                    ];
+
+                    if (!isset($allowed[$mime])) {
+                        throw new RuntimeException('Logo must be PNG, JPG, SVG, or WebP.');
+                    }
+
+                    $uploadDir = __DIR__ . '/static/uploads';
+                    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+                        throw new RuntimeException('Unable to prepare logo directory.');
+                    }
+
+                    $filename = sprintf('brand-%s-%s.%s', (new DateTimeImmutable())->format('YmdHis'), bin2hex(random_bytes(4)), $allowed[$mime]);
+                    $destination = $uploadDir . '/' . $filename;
+
+                    if (!move_uploaded_file($tmp, $destination)) {
+                        throw new RuntimeException('Failed to store the uploaded logo.');
+                    }
+
+                    $logoPath = 'static/uploads/' . $filename;
+
+                    if ($currentLogo !== '' && $currentLogo !== $logoPath) {
+                        $existingPath = local_asset_path($currentLogo);
+                        if ($existingPath && is_file($existingPath)) {
+                            @unlink($existingPath);
+                        }
+                    }
+                } elseif ($clearLogo && $currentLogo !== '') {
+                    $existingPath = local_asset_path($currentLogo);
+                    if ($existingPath && is_file($existingPath)) {
+                        @unlink($existingPath);
+                    }
+                }
+
                 $settings = [
-                    'company_name' => trim($_POST['company_name'] ?? ''),
-                    'brand_logo_url' => trim($_POST['brand_logo_url'] ?? ''),
-                    'brand_primary_color' => trim($_POST['brand_primary_color'] ?? '#3b82f6'),
-                    'brand_font_family' => trim($_POST['brand_font_family'] ?? 'Inter, sans-serif'),
-                    'support_email' => trim($_POST['support_email'] ?? ''),
+                    'company_name' => $companyName !== '' ? $companyName : 'Service Portal',
+                    'brand_logo_url' => $logoPath,
+                    'brand_primary_color' => $primaryColor !== '' ? $primaryColor : '#3b82f6',
+                    'brand_font_family' => $fontFamily !== '' ? $fontFamily : 'Inter, sans-serif',
+                    'support_email' => $supportEmail,
                 ];
+
                 foreach ($settings as $key => $value) {
                     set_setting($key, $value);
                 }
@@ -551,7 +612,7 @@ $notifications = get_notifications($pdo, (int) $user['id']);
 $unreadNotifications = array_filter($notifications, fn($notification) => empty($notification['read_at']));
 
 if ($user['role'] === 'admin') {
-    $adminViews = ['overview', 'services', 'orders', 'invoices', 'tickets', 'ticket', 'clients', 'automations', 'payments', 'administrators', 'forms'];
+    $adminViews = ['overview', 'services', 'orders', 'invoices', 'tickets', 'ticket', 'clients', 'automations', 'payments', 'administrators', 'forms', 'settings'];
     if (!in_array($view, $adminViews, true)) {
         $view = 'overview';
     }

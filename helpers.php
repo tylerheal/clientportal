@@ -39,6 +39,29 @@ function url_for(string $path = ''): string
     return $prefix . ($path === '/' ? '' : $path);
 }
 
+function asset_url(string $path): string
+{
+    if ($path === '') {
+        return '';
+    }
+
+    if (preg_match('#^(?:https?:)?//#i', $path)) {
+        return $path;
+    }
+
+    return url_for(ltrim($path, '/'));
+}
+
+function local_asset_path(string $path): ?string
+{
+    if ($path === '' || preg_match('#^(?:https?:)?//#i', $path)) {
+        return null;
+    }
+
+    $clean = ltrim($path, '/');
+    return __DIR__ . '/' . $clean;
+}
+
 function redirect(string $path): void
 {
     header('Location: ' . url_for($path));

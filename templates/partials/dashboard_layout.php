@@ -3,8 +3,8 @@ if (!defined('APP_BOOTSTRAPPED')) {
     require __DIR__ . '/../../bootstrap.php';
 }
 $company = get_setting('company_name', 'Service Portal');
-$customLogo = get_setting('brand_logo_url', '');
-$logo = $customLogo !== '' ? $customLogo : null;
+$logoSetting = get_setting('brand_logo_url', '');
+$logo = $logoSetting !== '' ? asset_url($logoSetting) : null;
 $primary = get_setting('brand_primary_color', '#2563eb');
 $font = get_setting('brand_font_family', 'Inter, sans-serif');
 $notifications = $notifications ?? [];
@@ -14,6 +14,7 @@ $pageTitle = $pageTitle ?? $company;
 $user = $user ?? current_user();
 $searchAction = $searchAction ?? url_for('dashboard');
 $bodyClass = $bodyClass ?? '';
+$bodyClassAttr = trim('dashboard-ready ' . $bodyClass);
 $activeKey = $activeKey ?? '';
 $brandInitials = brand_initials($company);
 $currentPath = trim(request_path(), '/');
@@ -27,7 +28,7 @@ $currentPath = trim(request_path(), '/');
     <link rel="stylesheet" href="<?= e(url_for('static/css/app.css')); ?>">
     <style><?= theme_styles(); ?></style>
 </head>
-<body class="dashboard-body <?= e($bodyClass); ?>">
+<body class="dashboard-body <?= e($bodyClassAttr); ?>">
     <div class="dashboard-layout">
         <aside class="dashboard-sidebar" style="--brand-primary: <?= e($primary); ?>;">
             <div class="sidebar-brand">
@@ -53,17 +54,32 @@ $currentPath = trim(request_path(), '/');
                 <a class="sidebar-footer-link" href="<?= e(url_for('logout')); ?>">Sign out</a>
             </div>
         </aside>
+        <div class="sidebar-backdrop" data-sidebar-backdrop></div>
         <div class="dashboard-main">
             <header class="dashboard-header">
-                <div class="header-title">
-                    <h1><?= e($pageTitle); ?></h1>
+                <div class="header-left">
+                    <button type="button" class="sidebar-toggle" data-sidebar-toggle aria-label="Toggle navigation">
+                        <span class="icon icon--menu" aria-hidden="true">
+                            <svg viewBox="0 0 448 512" role="presentation" focusable="false">
+                                <path d="M16 132h416a16 16 0 0 0 0-32H16a16 16 0 0 0 0 32Zm0 140h416a16 16 0 0 0 0-32H16a16 16 0 0 0 0 32Zm0 140h416a16 16 0 0 0 0-32H16a16 16 0 0 0 0 32Z" />
+                            </svg>
+                        </span>
+                    </button>
+                    <div class="header-title">
+                        <h1><?= e($pageTitle); ?></h1>
+                    </div>
                 </div>
                 <div class="header-actions">
                     <form action="<?= e($searchAction); ?>" method="get" class="dashboard-search">
+                        <span class="icon icon--search" aria-hidden="true">
+                            <svg viewBox="0 0 512 512" role="presentation" focusable="false">
+                                <path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0s208 93.1 208 208Zm-80 0c0-70.7-57.3-128-128-128S80 137.3 80 208s57.3 128 128 128 128-57.3 128-128Z" />
+                            </svg>
+                        </span>
                         <input type="search" name="q" value="<?= e($_GET['q'] ?? ''); ?>" placeholder="Search the portal">
                     </form>
                     <details class="notification-details">
-                        <summary class="notification-button<?= $unreadCount ? ' notification-button--active' : ''; ?>" title="Notifications" aria-label="Notifications">
+                        <summary class="notification-button<?= $unreadCount ? ' notification-button--active' : ''; ?>" aria-label="Notifications">
                             <span class="icon icon--bell" aria-hidden="true">
                                 <svg viewBox="0 0 448 512" role="presentation" focusable="false">
                                     <path d="M224 512a64 64 0 0 0 64-64H160a64 64 0 0 0 64 64Zm215.4-149.1c-20.9-21.5-55.5-53.6-55.5-154.9 0-77.7-54.5-139.5-127.9-155.2V32a32 32 0 0 0-64 0v20.8C118.6 68.5 64 130.3 64 208c0 101.3-34.6 133.4-55.5 154.9A31.9 31.9 0 0 0 0 384c0 17.7 14.3 32 32 32h384c17.7 0 32-14.3 32-32a31.9 31.9 0 0 0-8.6-21.1Z" />
@@ -97,8 +113,8 @@ $currentPath = trim(request_path(), '/');
                             </ul>
                         </div>
                     </details>
-                    <a class="profile-chip" href="<?= e(url_for('profile')); ?>" title="Profile &amp; security">
-                        <div class="profile-avatar">
+                    <a class="profile-button" href="<?= e(url_for('profile')); ?>" aria-label="Profile &amp; security">
+                        <span class="profile-avatar">
                             <?php if (!empty($user['avatar_url'])): ?>
                                 <img src="<?= e($user['avatar_url']); ?>" alt="<?= e($user['name'] ?? 'Profile'); ?>" onerror="this.remove();">
                             <?php else: ?>
@@ -108,11 +124,8 @@ $currentPath = trim(request_path(), '/');
                                     </svg>
                                 </span>
                             <?php endif; ?>
-                        </div>
-                        <div class="profile-meta">
-                            <span class="profile-name"><?= e($user['name'] ?? 'Your profile'); ?></span>
-                            <span class="profile-email"><?= e($user['email'] ?? ''); ?></span>
-                        </div>
+                        </span>
+                        <span class="sr-only">Open profile</span>
                     </a>
                 </div>
             </header>
@@ -121,5 +134,6 @@ $currentPath = trim(request_path(), '/');
             </main>
         </div>
     </div>
+    <script defer src="<?= e(url_for('static/js/app.js')); ?>"></script>
 </body>
 </html>
