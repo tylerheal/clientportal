@@ -1,50 +1,60 @@
-# Client Portal
+# Client Portal (PHP)
 
-This project provides a self-hosted client portal with an administrative dashboard.
+This project delivers a PHP-powered client portal inspired by SPP with distinct admin and client areas. It supports service management, order capture, ticketing, branding controls, and email notifications out of the box.
 
 ## Features
 
-- Email/password authentication for admins and clients.
-- Admin console for managing services, custom intake forms, orders, support tickets, clients, and settings.
-- Client area for viewing dashboards, requesting services, tracking orders, managing tickets, and downloading shared files.
-- Visual form builder for services and reusable form templates.
-- Stripe Checkout and PayPal order creation (requires API keys and internet access) for collecting payments.
-- SMTP-based email notifications with editable templates and Microsoft 365 credential storage fields.
-- Branding controls for logo, colours, and typography.
-- SQLite-backed persistence with automatic migration.
+- Email/password authentication with role-based access for admins and clients.
+- Admin dashboard to manage services (including dynamic intake forms), review orders, respond to support tickets, and configure branding/payment/email settings.
+- Client dashboard to submit orders, review order/payment status, and create or reply to support tickets.
+- Simple visual form builder using `Label|name|type|required` lines that are converted into dynamic service forms.
+- Editable email templates plus configurable Stripe and PayPal credentials.
+- Automatic SQLite persistence with seeded admin account and lightweight email logging fallback.
 
 ## Requirements
 
-- Python 3.11 or later.
-- Network access is required for third-party integrations (Stripe, PayPal, Microsoft 365 SMTP).
+- PHP 8.1+ with the `pdo_sqlite` extension enabled.
+- A web server capable of running PHP (Apache, Nginx with PHP-FPM, etc.).
 
-All dependencies rely on the Python standard library so no additional packages need to be installed.
+## Getting Started
 
-## Running the Portal
+1. Copy the repository contents to your PHP-enabled web root (or configure a virtual host pointing to this directory).
+2. Ensure the PHP process can write to the `data/` directory (it will be created automatically on first run).
+3. Visit `/signup.php` to create a client account or log in with the seeded admin account:
+   - **Email:** `admin@example.com`
+   - **Password:** `Admin123!`
+4. Update branding, payment credentials, and email templates from the **Brand & account settings**, **Email templates**, and **Payment integrations** sections of the admin dashboard.
+
+## Email Notifications
+
+The portal uses PHP's native `mail()` function. If delivery fails (common on local environments), the email payload is appended to `data/mail.log` so you can review what would have been sent. Configure your server's mail transport or connect a transactional provider for production use.
+
+## Payments
+
+Stripe and PayPal credentials are stored in settings for convenience. Orders are created immediately; update payment statuses manually or extend the integration with webhooks as required for your workflow.
+
+## Customisation
+
+Adjust the brand colour, logo URL, and font family directly from the admin dashboard. Additional styling hooks are exposed via `static/css/style.css`.
+
+## Development Notes
+
+- Database schema lives in `database.php` and is created automatically when the site first loads.
+- Application routes are handled through standalone PHP files (`login.php`, `signup.php`, `dashboard.php`, etc.).
+- Tailwind CSS is consumed via CDN for rapid styling; supplement with `static/css/style.css` for bespoke tweaks.
+
+## Testing Locally
+
+If you have PHP installed locally you can use the built-in development server:
 
 ```bash
-python app.py
+php -S localhost:8000
 ```
 
-The server listens on `http://0.0.0.0:8000` by default. Log in with the seeded admin account:
+Then browse to `http://localhost:8000/login.php`.
 
-- **Email:** `admin@example.com`
-- **Password:** `admin123!`
+## Security Considerations
 
-## Configuration
-
-Most configuration options are available inside the admin dashboard under **Settings**. SMTP credentials must be configured before email notifications will send. Stripe and PayPal credentials are optional but required for payment links.
-
-## Database
-
-The application stores data in `data/portal.sqlite3`. The schema is created automatically on first run.
-
-## Email Templates
-
-Email templates can be customised in the admin dashboard. Templates support placeholder variables like `{{client_name}}`, `{{service_name}}`, etc.
-
-## Limitations
-
-- File uploads are disabled until storage integrations are added; clients see a placeholder message.
-- Payment status tracking relies on manual updates or future webhook integration.
-- Microsoft 365 integration fields are stored but further integration (e.g., Graph API) must be implemented separately.
+- Passwords are hashed using PHP's `password_hash` / `password_verify` helpers.
+- Sessions are regenerated on login/logout.
+- Further hardening (CSRF tokens, rate limiting, audit logs) can be added as needed for production deployments.
