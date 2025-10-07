@@ -1,0 +1,53 @@
+/*! Minimal QRCode generator (MIT) */
+(function(){
+function QR8BitByte(data){this.mode=4;this.data=data;}
+QR8BitByte.prototype.getLength=function(){return this.data.length;};
+QR8BitByte.prototype.write=function(buffer){for(var i=0;i<this.data.length;i++){buffer.put(this.data.charCodeAt(i),8);}};
+function QRCode(typeNumber,errorCorrectLevel){this.typeNumber=typeNumber;this.errorCorrectLevel=errorCorrectLevel;this.modules=null;this.moduleCount=0;this.dataCache=null;this.dataList=[];}
+QRCode.prototype.addData=function(data){this.dataList.push(new QR8BitByte(data));this.dataCache=null;};
+QRCode.prototype.isDark=function(row,col){if(row<0||this.moduleCount<=row||col<0||this.moduleCount<=col)throw new Error(row+","+col);return this.modules[row][col];};
+QRCode.prototype.getModuleCount=function(){return this.moduleCount;};
+QRCode.prototype.make=function(){this.makeImpl(false,this.getBestMaskPattern());};
+QRCode.prototype.makeImpl=function(test,maskPattern){this.moduleCount=this.typeNumber*4+17;this.modules=new Array(this.moduleCount);for(var row=0;row<this.moduleCount;row++){this.modules[row]=new Array(this.moduleCount);for(var col=0;col<this.moduleCount;col++){this.modules[row][col]=null;}}this.setupPositionProbePattern(0,0);this.setupPositionProbePattern(this.moduleCount-7,0);this.setupPositionProbePattern(0,this.moduleCount-7);this.setupPositionAdjustPattern();this.setupTimingPattern();this.setupTypeInfo(test,maskPattern);if(this.typeNumber>=7){this.setupTypeNumber(test);}if(this.dataCache==null){this.dataCache=QRCode.createData(this.typeNumber,this.errorCorrectLevel,this.dataList);}this.mapData(this.dataCache,maskPattern);};
+QRCode.prototype.setupPositionProbePattern=function(row,col){for(var r=-1;r<=7;r++){if(row+r<=-1||this.moduleCount<=row+r)continue;for(var c=-1;c<=7;c++){if(col+c<=-1||this.moduleCount<=col+c)continue;this.modules[row+r][col+c]=0<=r&&r<=6&&(c==0||c==6)||0<=c&&c<=6&&(r==0||r==6)||2<=r&&r<=4&&2<=c&&c<=4;}}};
+QRCode.prototype.getBestMaskPattern=function(){var min=0,p=0;for(var i=0;i<8;i++){this.makeImpl(true,i);var lost=QRUtil.getLostPoint(this);if(i==0||min>lost){min=lost;p=i;}}return p;};
+QRCode.prototype.setupTimingPattern=function(){for(var r=8;r<this.moduleCount-8;r++){if(this.modules[r][6]!=null)continue;this.modules[r][6]=r%2==0;}for(var c=8;c<this.moduleCount-8;c++){if(this.modules[6][c]!=null)continue;this.modules[6][c]=c%2==0;}};
+QRCode.prototype.setupPositionAdjustPattern=function(){var pos=QRUtil.getPatternPosition(this.typeNumber);for(var i=0;i<pos.length;i++){for(var j=0;j<pos.length;j++){var row=pos[i],col=pos[j];if(this.modules[row][col]!=null)continue;for(var r=-2;r<=2;r++){for(var c=-2;c<=2;c++){this.modules[row+r][col+c]=r==-2||r==2||c==-2||c==2||r==0&&c==0;}}}}};
+QRCode.prototype.setupTypeNumber=function(test){var bits=QRUtil.getBCHTypeNumber(this.typeNumber);for(var i=0;i<18;i++){var mod=!test&&((bits>>i)&1)==1;this.modules[Math.floor(i/3)][i%3+this.moduleCount-8-3]=mod;this.modules[i%3+this.moduleCount-8-3][Math.floor(i/3)]=mod;}};
+QRCode.prototype.setupTypeInfo=function(test,maskPattern){var data=(QRCode.ErrorCorrectLevel[this.errorCorrectLevel]<<3)|maskPattern;var bits=QRUtil.getBCHTypeInfo(data);for(var i=0;i<15;i++){var mod=!test&&((bits>>i)&1)==1;if(i<6){this.modules[i][8]=mod;}else if(i<8){this.modules[i+1][8]=mod;}else{this.modules[this.moduleCount-15+i][8]=mod;}}for(i=0;i<15;i++){mod=!test&&((bits>>i)&1)==1;if(i<8){this.modules[8][this.moduleCount-1-i]=mod;}else if(i<9){this.modules[8][15-i-1+1]=mod;}else{this.modules[8][15-i-1]=mod;}}this.modules[this.moduleCount-8][8]=!test;};
+QRCode.prototype.mapData=function(data,maskPattern){var inc=-1,row=this.moduleCount-1,bit=7,byteIndex=0;for(var col=this.moduleCount-1;col>0;col-=2){if(col==6)col--;for(;;){for(var c=0;c<2;c++){if(this.modules[row][col-c]==null){var dark=false;if(byteIndex<data.length){dark=((data[byteIndex]>>>bit)&1)==1;}if(QRUtil.getMask(maskPattern,row,col-c)){dark=!dark;}this.modules[row][col-c]=dark;bit--;if(bit==-1){byteIndex++;bit=7;} }}row+=inc;if(row<0||this.moduleCount<=row){row-=inc;inc=-inc;break;}}}};
+QRCode.prototype.renderTo=function(container,size){size=size||220;var count=this.getModuleCount();var canvas=document.createElement('canvas');canvas.width=canvas.height=size;var ctx=canvas.getContext('2d');var tile=size/(count+8);ctx.fillStyle='#ffffff';ctx.fillRect(0,0,size,size);for(var r=0;r<count;r++){for(var c=0;c<count;c++){if(this.isDark(r,c)){ctx.fillStyle='#111827';ctx.fillRect((c+4)*tile,(r+4)*tile,tile,tile);}}}container.innerHTML='';container.appendChild(canvas);};
+QRCode.ErrorCorrectLevel={L:1,M:0,Q:3,H:2};
+var QRUtil={
+EXP_TABLE:new Array(256),
+LOG_TABLE:new Array(256),
+PATTERN_POSITION_TABLE:[[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46]],
+glog:function(n){if(n<1)throw new Error('glog('+n+')');return QRUtil.LOG_TABLE[n];},
+gexp:function(n){for(;n<0;)n+=255;for(;n>=256;)n-=255;return QRUtil.EXP_TABLE[n];},
+getErrorCorrectPolynomial:function(len){var poly=new QRPolynomial([1],0);for(var i=0;i<len;i++){poly=poly.multiply(new QRPolynomial([1,QRUtil.gexp(i)],0));}return poly;},
+getBCHTypeInfo:function(data){for(var d=data<<10;QRUtil.getBCHDigit(d)-QRUtil.getBCHDigit(1335)>=0;)d^=1335<<QRUtil.getBCHDigit(d)-QRUtil.getBCHDigit(1335);return data<<10|d;},
+getBCHTypeNumber:function(data){for(var d=data<<12;QRUtil.getBCHDigit(d)-QRUtil.getBCHDigit(7973)>=0;)d^=7973<<QRUtil.getBCHDigit(d)-QRUtil.getBCHDigit(7973);return data<<12|d;},
+getBCHDigit:function(data){var digit=0;while(data!=0){digit++;data>>>=1;}return digit;},
+getPatternPosition:function(typeNumber){return QRUtil.PATTERN_POSITION_TABLE[typeNumber-1];},
+getMask:function(mask,row,col){switch(mask){case 0:return (row+col)%2==0;case 1:return row%2==0;case 2:return col%3==0;case 3:return (row+col)%3==0;case 4:return (Math.floor(row/2)+Math.floor(col/3))%2==0;case 5:return row*col%2+row*col%3==0;case 6:return (row*col%2+row*col%3)%2==0;case 7:return (row*col%3+(row+col)%2)%2==0;default:throw new Error('bad mask');}},
+getLengthInBits:function(mode,type){if(type<10)return 8;if(type<27)return 16;return 16;},
+getLostPoint:function(qr){var count=qr.getModuleCount(),lost=0;for(var row=0;row<count;row++){for(var col=0;col<count;col++){var same=0,dark=qr.isDark(row,col);for(var r=-1;r<=1;r++){if(row+r<0||count<=row+r)continue;for(var c=-1;c<=1;c++){if(col+c<0||count<=col+c)continue;if(r==0&&c==0)continue;dark==qr.isDark(row+r,col+c)&&same++;}}same>5&&(lost+=3+same-5);} }return lost;}};
+function QRPolynomial(num,shift){var offset=0;while(offset<num.length&&num[offset]==0)offset++;this.num=new Array(num.length-offset+shift);for(var i=0;i<num.length-offset;i++)this.num[i]=num[i+offset];}
+QRPolynomial.prototype.get=function(index){return this.num[index];};
+QRPolynomial.prototype.getLength=function(){return this.num.length;};
+QRPolynomial.prototype.multiply=function(e){var num=new Array(this.getLength()+e.getLength()-1);for(var i=0;i<this.getLength();i++){for(var j=0;j<e.getLength();j++){num[i+j]^=QRUtil.gexp(QRUtil.glog(this.get(i))+QRUtil.glog(e.get(j)));}}return new QRPolynomial(num,0);};
+QRPolynomial.prototype.mod=function(e){if(this.getLength()-e.getLength()<0)return this;var ratio=QRUtil.glog(this.get(0))-QRUtil.glog(e.get(0));var num=new Array(this.getLength());for(var i=0;i<this.getLength();i++)num[i]=this.get(i);for(i=0;i<e.getLength();i++)num[i]^=QRUtil.gexp(QRUtil.glog(e.get(i))+ratio);return new QRPolynomial(num,0).mod(e);};
+QRCode.RSBlock=function(totalCount,dataCount){this.totalCount=totalCount;this.dataCount=dataCount;};
+QRCode.RSBlock.getRSBlocks=function(typeNumber,errorCorrectLevel){var table=QRCode.RSBlock.TABLE[(typeNumber-1)*4+QRCode.ErrorCorrectLevel[errorCorrectLevel]],list=[];for(var i=0;i<table.length/3;i++)for(var j=0;j<table[i*3];j++)list.push(new QRCode.RSBlock(table[i*3+1],table[i*3+2]));return list;};
+QRCode.RSBlock.TABLE=[[1,26,19],[1,26,16],[1,26,13],[1,26,9],[1,44,34],[1,44,28],[1,44,22],[1,44,16],[1,70,55],[1,70,44],[2,35,17],[2,35,13]];
+QRCode.createBytes=function(buffer,rsBlocks){var offset=0,dcdata=[],ecdata=[],maxDc=0,maxEc=0;for(var r=0;r<rsBlocks.length;r++){var dcCount=rsBlocks[r].dataCount,ecCount=rsBlocks[r].totalCount-dcCount;maxDc=Math.max(maxDc,dcCount);maxEc=Math.max(maxEc,ecCount);dcdata[r]=new Array(dcCount);for(var i=0;i<dcCount;i++)dcdata[r][i]=255&buffer.get(i+offset);offset+=dcCount;var rsPoly=QRUtil.getErrorCorrectPolynomial(ecCount),rawPoly=new QRPolynomial(dcdata[r],0),modPoly=rawPoly.mod(rsPoly);ecdata[r]=new Array(ecCount);for(i=0;i<ecCount;i++)ecdata[r][i]=modPoly.get(i);}var total=0;for(i=0;i<rsBlocks.length;i++)total+=rsBlocks[i].totalCount;var data=new Array(total),index=0;for(i=0;i<maxDc;i++)for(r=0;r<rsBlocks.length;r++)if(i<dcdata[r].length)data[index++]=dcdata[r][i];for(i=0;i<maxEc;i++)for(r=0;r<rsBlocks.length;r++)if(i<ecdata[r].length)data[index++]=ecdata[r][i];return data;};
+QRCode.createData=function(typeNumber,errorCorrectLevel,dataList){var rsBlocks=QRCode.RSBlock.getRSBlocks(typeNumber,errorCorrectLevel),buffer=new QRBitBuffer();for(var i=0;i<dataList.length;i++){var data=dataList[i];buffer.put(data.mode,4);buffer.put(data.getLength(),QRUtil.getLengthInBits(data.mode,typeNumber));data.write(buffer);}for(var total=0,i=0;i<rsBlocks.length;i++)total+=rsBlocks[i].dataCount;if(buffer.getLengthInBits()>total*8)throw new Error('code length overflow.');for(;buffer.getLengthInBits()%8!=0;)buffer.putBit(false);for(;buffer.getLengthInBits()<total*8;){buffer.put(236,8);if(buffer.getLengthInBits()>=total*8)break;buffer.put(17,8);}return QRCode.createBytes(buffer,rsBlocks);};
+function QRBitBuffer(){this.buffer=[];this.length=0;}
+QRBitBuffer.prototype.get=function(i){return this.buffer[i];};
+QRBitBuffer.prototype.put=function(num,length){for(var i=0;i<length;i++)this.putBit((num>>length-i-1&1)==1);};
+QRBitBuffer.prototype.getLengthInBits=function(){return this.length;};
+QRBitBuffer.prototype.putBit=function(bit){var bufIndex=Math.floor(this.length/8);if(this.buffer.length<=bufIndex)this.buffer.push(0);if(bit)this.buffer[bufIndex]|=128>>this.length%8;this.length++;};
+for(var i=0;i<256;i++){QRUtil.EXP_TABLE[i]=i==0?1:QRUtil.EXP_TABLE[i-1]<<1;if(QRUtil.EXP_TABLE[i]>=256)QRUtil.EXP_TABLE[i]^=285;}
+for(i=0;i<255;i++)QRUtil.LOG_TABLE[QRUtil.EXP_TABLE[i]]=i;
+window.SimpleQR=function(container,text){var qr=new QRCode(4,'M');qr.addData(text);qr.make();qr.renderTo(container);};
+})();
