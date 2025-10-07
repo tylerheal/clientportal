@@ -35,6 +35,10 @@ function initialise_schema(PDO $pdo): void
         phone TEXT,
         role TEXT NOT NULL DEFAULT "client",
         settings JSON,
+        totp_secret TEXT,
+        totp_enabled INTEGER NOT NULL DEFAULT 0,
+        totp_recovery_codes TEXT,
+        avatar_url TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )');
@@ -45,6 +49,7 @@ function initialise_schema(PDO $pdo): void
         description TEXT,
         price REAL NOT NULL DEFAULT 0,
         form_schema TEXT,
+        billing_interval TEXT NOT NULL DEFAULT "one_time",
         active INTEGER NOT NULL DEFAULT 1,
         created_by INTEGER,
         created_at TEXT NOT NULL,
@@ -61,6 +66,7 @@ function initialise_schema(PDO $pdo): void
         total_amount REAL NOT NULL,
         form_data TEXT,
         payment_reference TEXT,
+        billing_interval TEXT NOT NULL DEFAULT "one_time",
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES users(id),
@@ -92,8 +98,74 @@ function initialise_schema(PDO $pdo): void
         value TEXT
     )');
 
+    $pdo->exec('CREATE TABLE IF NOT EXISTS email_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )');
+
+    $pdo->exec('CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        message TEXT NOT NULL,
+        link TEXT,
+        created_at TEXT NOT NULL,
+        read_at TEXT,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    )');
+
+    $pdo->exec('CREATE TABLE IF NOT EXISTS subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        service_id INTEGER NOT NULL,
+        interval TEXT NOT NULL,
+        next_billing_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT "active",
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(order_id) REFERENCES orders(id),
+        FOREIGN KEY(user_id) REFERENCES users(id),
+        FOREIGN KEY(service_id) REFERENCES services(id)
+    )');
+
+    $pdo->exec('CREATE TABLE IF NOT EXISTS invoices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subscription_id INTEGER NOT NULL,
+        order_id INTEGER,
+        user_id INTEGER NOT NULL,
+        service_id INTEGER NOT NULL,
+        total REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT "pending",
+        due_at TEXT NOT NULL,
+        paid_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(subscription_id) REFERENCES subscriptions(id),
+        FOREIGN KEY(order_id) REFERENCES orders(id),
+        FOREIGN KEY(user_id) REFERENCES users(id),
+        FOREIGN KEY(service_id) REFERENCES services(id)
+    )');
+
+    $pdo->exec('CREATE TABLE IF NOT EXISTS payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        invoice_id INTEGER NOT NULL,
+        provider TEXT NOT NULL,
+        reference TEXT,
+        amount REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT "initiated",
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(invoice_id) REFERENCES invoices(id)
+    )');
+
     seed_default_admin($pdo);
     seed_default_settings($pdo);
+    seed_default_templates($pdo);
 }
 
 function seed_default_admin(PDO $pdo): void
@@ -146,5 +218,48 @@ function seed_default_settings(PDO $pdo): void
         if (!$select->fetchColumn()) {
             $insert->execute(['key' => $key, 'value' => $value]);
         }
+    }
+}
+
+function seed_default_templates(PDO $pdo): void
+{
+    $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+    $defaults = [
+        [
+            'slug' => 'order_confirmation',
+            'name' => 'Order confirmation',
+            'subject' => 'Order received – {{service}}',
+            'body' => "Hi {{name}},\n\nThanks for your order of {{service}}. We'll let you know once it's underway.\n\nRegards,\n{{company}}",
+        ],
+        [
+            'slug' => 'ticket_reply',
+            'name' => 'Ticket reply',
+            'subject' => 'Ticket update: {{subject}}',
+            'body' => "Hi {{name}},\n\nWe've responded to your support ticket '{{subject}}'.\n\n{{message}}\n\nRegards,\n{{company}}",
+        ],
+        [
+            'slug' => 'invoice_payment_success',
+            'name' => 'Invoice payment success',
+            'subject' => 'Payment received – Invoice #{{invoice}}',
+            'body' => "Hi {{name}},\n\nWe've received your payment for invoice #{{invoice}} covering {{service}}. Thank you!\n\nRegards,\n{{company}}",
+        ],
+        [
+            'slug' => 'invoice_overdue',
+            'name' => 'Invoice overdue',
+            'subject' => 'Payment overdue – Invoice #{{invoice}}',
+            'body' => "Hi {{name}},\n\nInvoice #{{invoice}} for {{service}} is now overdue. Please complete payment as soon as possible.\n\nRegards,\n{{company}}",
+        ],
+    ];
+
+    $insert = $pdo->prepare('INSERT OR IGNORE INTO email_templates (slug, name, subject, body, created_at, updated_at) VALUES (:slug, :name, :subject, :body, :created_at, :updated_at)');
+    foreach ($defaults as $template) {
+        $insert->execute([
+            'slug' => $template['slug'],
+            'name' => $template['name'],
+            'subject' => $template['subject'],
+            'body' => $template['body'],
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
     }
 }

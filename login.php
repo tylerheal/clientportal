@@ -2,7 +2,7 @@
 require __DIR__ . '/bootstrap.php';
 
 if (current_user()) {
-    redirect('dashboard.php');
+    redirect('dashboard');
 }
 
 if (is_post()) {
@@ -19,29 +19,19 @@ if (is_post()) {
         if (!$user || !password_verify($password, $user['password_hash'])) {
             flash('error', 'Incorrect email or password.');
         } else {
+            if (!empty($user['totp_enabled'])) {
+                $_SESSION['pending_2fa_user'] = (int) $user['id'];
+                flash('success', 'Password accepted. Enter your authentication code to continue.');
+                redirect('verify-otp');
+            }
+
             login($user);
             flash('success', 'Welcome back, ' . $user['name'] . '!');
-            redirect('dashboard.php');
+            redirect('dashboard');
         }
     }
 }
 
 $pageTitle = 'Login';
-include __DIR__ . '/templates/partials/header.php';
-?>
-<div class="mx-auto max-w-lg rounded-lg bg-white p-8 shadow">
-    <h1 class="text-2xl font-semibold text-slate-900">Sign in to your account</h1>
-    <p class="mt-2 text-sm text-slate-600">Don't have an account? <a href="signup.php" class="text-brand hover:underline">Create one</a>.</p>
-    <form action="" method="post" class="mt-8 space-y-5">
-        <label class="block text-sm font-medium text-slate-700">
-            Email address
-            <input type="email" name="email" required value="<?= e($_POST['email'] ?? ''); ?>" class="mt-1 w-full rounded border border-slate-300 px-3 py-2 focus:border-brand focus:ring-2 focus:ring-brand">
-        </label>
-        <label class="block text-sm font-medium text-slate-700">
-            Password
-            <input type="password" name="password" required class="mt-1 w-full rounded border border-slate-300 px-3 py-2 focus:border-brand focus:ring-2 focus:ring-brand">
-        </label>
-        <button type="submit" class="w-full rounded bg-brand px-4 py-2 font-medium text-white hover:bg-brand-dark">Sign in</button>
-    </form>
-</div>
-<?php include __DIR__ . '/templates/partials/footer.php'; ?>
+$authView = 'login';
+include __DIR__ . '/templates/auth_shell.php';

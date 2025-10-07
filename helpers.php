@@ -1,9 +1,23 @@
 <?php
 declare(strict_types=1);
 
+function base_path(): string
+{
+    $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
+    $dir = rtrim(str_replace('\\', '/', dirname($scriptName)), '/');
+    return $dir === '' ? '' : $dir;
+}
+
+function url_for(string $path = ''): string
+{
+    $prefix = base_path();
+    $path = '/' . ltrim($path, '/');
+    return $prefix . ($path === '/' ? '' : $path);
+}
+
 function redirect(string $path): void
 {
-    header('Location: ' . $path);
+    header('Location: ' . url_for($path));
     exit;
 }
 
@@ -32,12 +46,12 @@ function require_login(?string $role = null): void
 {
     if (!current_user()) {
         flash('error', 'Please log in to continue.');
-        redirect('login.php');
+        redirect('login');
     }
 
     if ($role !== null && current_user()['role'] !== $role) {
         flash('error', 'You are not authorised to access that area.');
-        redirect('dashboard.php');
+        redirect('dashboard');
     }
 }
 
@@ -89,6 +103,128 @@ function theme_styles(): string
     $font = get_setting('brand_font_family', 'Inter, sans-serif');
 
     return ":root { --brand-primary: {$primary}; --brand-primary-dark: {$primary}; --brand-font: {$font}; }";
+}
+
+function find_template(PDO $pdo, string $slug): ?array
+{
+    static $cache = [];
+    if (!array_key_exists($slug, $cache)) {
+        $stmt = $pdo->prepare('SELECT * FROM email_templates WHERE slug = :slug LIMIT 1');
+        $stmt->execute(['slug' => $slug]);
+        $cache[$slug] = $stmt->fetch() ?: null;
+    }
+    return $cache[$slug];
+}
+
+function send_templated_email(PDO $pdo, string $slug, array $replacements, string $to, string $fallbackSubject, ?string $fallbackBody = null): void
+{
+    $template = find_template($pdo, $slug);
+    if ($template) {
+        $subject = strtr($template['subject'], $replacements);
+        $body = strtr($template['body'], $replacements);
+    } else {
+        $subject = $fallbackSubject;
+        $body = $fallbackBody ?? $fallbackSubject;
+    }
+    send_notification_email($to, $subject, $body);
+}
+
+function random_base32(int $length = 32): string
+{
+    $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    $result = '';
+    for ($i = 0; $i < $length; $i++) {
+        $result .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+    }
+    return $result;
+}
+
+function base32_decode(string $encoded): string
+{
+    $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    $encoded = strtoupper($encoded);
+    $encoded = preg_replace('/[^A-Z2-7]/', '', $encoded);
+    $bits = '';
+    foreach (str_split($encoded) as $char) {
+        $value = strpos($alphabet, $char);
+        if ($value === false) {
+            continue;
+        }
+        $bits .= str_pad(decbin($value), 5, '0', STR_PAD_LEFT);
+    }
+
+    $bytes = '';
+    foreach (str_split($bits, 8) as $chunk) {
+        if (strlen($chunk) === 8) {
+            $bytes .= chr(bindec($chunk));
+        }
+    }
+    return $bytes;
+}
+
+function totp_now(string $secret, int $window = 0, int $period = 30, int $digits = 6): string
+{
+    $key = base32_decode($secret);
+    $timeSlice = (int) floor(time() / $period) + $window;
+    $binaryTime = pack('N*', 0) . pack('N*', $timeSlice);
+    $hash = hash_hmac('sha1', $binaryTime, $key, true);
+    $offset = ord(substr($hash, -1)) & 0x0F;
+    $truncated = (ord($hash[$offset]) & 0x7F) << 24
+        | (ord($hash[$offset + 1]) & 0xFF) << 16
+        | (ord($hash[$offset + 2]) & 0xFF) << 8
+        | (ord($hash[$offset + 3]) & 0xFF);
+    $code = $truncated % (10 ** $digits);
+    return str_pad((string) $code, $digits, '0', STR_PAD_LEFT);
+}
+
+function verify_totp(string $secret, string $code, int $window = 1): bool
+{
+    $code = preg_replace('/\D/', '', $code);
+    if (strlen($code) < 6) {
+        return false;
+    }
+    for ($i = -$window; $i <= $window; $i++) {
+        if (hash_equals(totp_now($secret, $i), $code)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function generate_recovery_codes(int $count = 8): array
+{
+    $codes = [];
+    for ($i = 0; $i < $count; $i++) {
+        $codes[] = strtoupper(bin2hex(random_bytes(4)));
+    }
+    return $codes;
+}
+
+function get_notifications(PDO $pdo, int $userId): array
+{
+    $stmt = $pdo->prepare('SELECT * FROM notifications WHERE user_id = :user ORDER BY created_at DESC LIMIT 20');
+    $stmt->execute(['user' => $userId]);
+    return $stmt->fetchAll();
+}
+
+function record_notification(PDO $pdo, int $userId, string $message, ?string $link = null): void
+{
+    $stmt = $pdo->prepare('INSERT INTO notifications (user_id, message, link, created_at) VALUES (:user_id, :message, :link, :created_at)');
+    $stmt->execute([
+        'user_id' => $userId,
+        'message' => $message,
+        'link' => $link,
+        'created_at' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+    ]);
+}
+
+function mark_notifications_read(PDO $pdo, int $userId): void
+{
+    $pdo->prepare('UPDATE notifications SET read_at = :read_at WHERE user_id = :user_id AND read_at IS NULL')
+        ->execute([
+            'read_at' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+            'user_id' => $userId,
+        ]);
 }
 
 function send_notification_email(string $to, string $subject, string $body): void

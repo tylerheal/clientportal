@@ -2,7 +2,37 @@
 require __DIR__ . '/bootstrap.php';
 require_login();
 
-$user = current_user();
+$pdo = get_db();
+$current = current_user();
+$stmt = $pdo->prepare('SELECT * FROM users WHERE id = :id LIMIT 1');
+$stmt->execute(['id' => $current['id']]);
+$user = $stmt->fetch();
+
+if (!$user) {
+    logout();
+    flash('error', 'Your session has expired. Please sign in again.');
+    redirect('login');
+}
+
+if (($current['name'] ?? '') !== $user['name'] || ($current['email'] ?? '') !== $user['email'] || ($current['totp_enabled'] ?? false) !== (bool) $user['totp_enabled']) {
+    login($user);
+}
+
+function admin_user_ids(PDO $pdo): array
+{
+    $ids = [];
+    foreach ($pdo->query("SELECT id FROM users WHERE role = 'admin'") as $row) {
+        $ids[] = (int) $row['id'];
+    }
+    return $ids;
+}
+
+function notify_admins(PDO $pdo, string $message, ?string $link = null): void
+{
+    foreach (admin_user_ids($pdo) as $adminId) {
+        record_notification($pdo, $adminId, $message, $link);
+    }
+}
 
 function parse_builder_lines(string $input): string
 {
@@ -31,18 +61,22 @@ if (is_post()) {
                 $price = (float) ($_POST['price'] ?? 0);
                 $description = trim($_POST['description'] ?? '');
                 $builder = trim($_POST['form_builder'] ?? '');
+                $billing = $_POST['billing_interval'] ?? 'one_time';
+                if (!in_array($billing, ['one_time', 'monthly', 'annual'], true)) {
+                    $billing = 'one_time';
+                }
                 if ($name === '') {
                     throw new RuntimeException('Service name is required.');
                 }
                 $schema = $builder !== '' ? parse_builder_lines($builder) : json_encode([], JSON_THROW_ON_ERROR);
                 $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
-                $stmt = $pdo->prepare('INSERT INTO services (name, description, price, form_schema, active, created_by, created_at, updated_at)
-                    VALUES (:name, :description, :price, :form_schema, :active, :created_by, :created_at, :updated_at)');
+                $stmt = $pdo->prepare('INSERT INTO services (name, description, price, form_schema, billing_interval, active, created_by, created_at, updated_at) VALUES (:name, :description, :price, :form_schema, :billing, :active, :created_by, :created_at, :updated_at)');
                 $stmt->execute([
                     'name' => $name,
                     'description' => $description,
                     'price' => $price,
                     'form_schema' => $schema,
+                    'billing' => $billing,
                     'active' => isset($_POST['active']) ? 1 : 0,
                     'created_by' => $user['id'],
                     'created_at' => $now,
@@ -57,17 +91,22 @@ if (is_post()) {
                 $price = (float) ($_POST['price'] ?? 0);
                 $description = trim($_POST['description'] ?? '');
                 $builder = trim($_POST['form_builder'] ?? '');
+                $billing = $_POST['billing_interval'] ?? 'one_time';
+                if (!in_array($billing, ['one_time', 'monthly', 'annual'], true)) {
+                    $billing = 'one_time';
+                }
                 if ($serviceId <= 0) {
                     throw new RuntimeException('Invalid service specified.');
                 }
                 $schema = $builder !== '' ? parse_builder_lines($builder) : json_encode([], JSON_THROW_ON_ERROR);
-                $stmt = $pdo->prepare('UPDATE services SET name = :name, description = :description, price = :price, form_schema = :form_schema, active = :active, updated_at = :updated_at WHERE id = :id');
+                $stmt = $pdo->prepare('UPDATE services SET name = :name, description = :description, price = :price, form_schema = :form_schema, billing_interval = :billing, active = :active, updated_at = :updated_at WHERE id = :id');
                 $stmt->execute([
                     'id' => $serviceId,
                     'name' => $name,
                     'description' => $description,
                     'price' => $price,
                     'form_schema' => $schema,
+                    'billing' => $billing,
                     'active' => isset($_POST['active']) ? 1 : 0,
                     'updated_at' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
                 ]);
@@ -95,11 +134,47 @@ if (is_post()) {
                 }
                 flash('success', 'Brand settings updated.');
                 break;
-            case 'update_email_templates':
+            case 'save_template':
                 require_login('admin');
-                set_setting('email_template_order', $_POST['email_template_order'] ?? '');
-                set_setting('email_template_ticket_reply', $_POST['email_template_ticket_reply'] ?? '');
-                flash('success', 'Email templates saved.');
+                $templateId = (int) ($_POST['template_id'] ?? 0);
+                $name = trim($_POST['name'] ?? '');
+                $slug = trim($_POST['slug'] ?? '');
+                $subject = trim($_POST['subject'] ?? '');
+                $body = trim($_POST['body'] ?? '');
+                if ($name === '' || $slug === '' || $subject === '' || $body === '') {
+                    throw new RuntimeException('All template fields are required.');
+                }
+                $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+                if ($templateId > 0) {
+                    $stmt = $pdo->prepare('UPDATE email_templates SET name = :name, slug = :slug, subject = :subject, body = :body, updated_at = :updated WHERE id = :id');
+                    $stmt->execute([
+                        'id' => $templateId,
+                        'name' => $name,
+                        'slug' => $slug,
+                        'subject' => $subject,
+                        'body' => $body,
+                        'updated' => $now,
+                    ]);
+                } else {
+                    $stmt = $pdo->prepare('INSERT INTO email_templates (name, slug, subject, body, created_at, updated_at) VALUES (:name, :slug, :subject, :body, :created, :updated)');
+                    $stmt->execute([
+                        'name' => $name,
+                        'slug' => $slug,
+                        'subject' => $subject,
+                        'body' => $body,
+                        'created' => $now,
+                        'updated' => $now,
+                    ]);
+                }
+                flash('success', 'Email template saved.');
+                break;
+            case 'delete_template':
+                require_login('admin');
+                $templateId = (int) ($_POST['template_id'] ?? 0);
+                if ($templateId > 0) {
+                    $pdo->prepare('DELETE FROM email_templates WHERE id = :id')->execute(['id' => $templateId]);
+                    flash('success', 'Template removed.');
+                }
                 break;
             case 'update_payments':
                 require_login('admin');
@@ -109,59 +184,32 @@ if (is_post()) {
                 set_setting('paypal_client_secret', $_POST['paypal_client_secret'] ?? '');
                 flash('success', 'Payment settings saved.');
                 break;
-            case 'update_order_status':
+            case 'create_admin_user':
                 require_login('admin');
-                $orderId = (int) ($_POST['order_id'] ?? 0);
-                $status = trim($_POST['payment_status'] ?? 'pending');
-                $reference = trim($_POST['payment_reference'] ?? '');
-                if ($orderId > 0) {
-                    $pdo->prepare('UPDATE orders SET payment_status = :status, payment_reference = :reference, updated_at = :updated_at WHERE id = :id')
-                        ->execute([
-                            'status' => $status,
-                            'reference' => $reference,
-                            'updated_at' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
-                            'id' => $orderId,
-                        ]);
-                    flash('success', 'Order updated.');
+                $email = strtolower(trim($_POST['email'] ?? ''));
+                $name = trim($_POST['name'] ?? '');
+                $password = $_POST['password'] ?? '';
+                if ($email === '' || $name === '' || strlen($password) < 8) {
+                    throw new RuntimeException('Provide a name, valid email, and a password of at least 8 characters.');
                 }
-                break;
-            case 'reply_ticket_admin':
-                require_login('admin');
-                $ticketId = (int) ($_POST['ticket_id'] ?? 0);
-                $message = trim($_POST['message'] ?? '');
-                $status = trim($_POST['status'] ?? 'open');
-                if ($ticketId <= 0 || $message === '') {
-                    throw new RuntimeException('Message text is required.');
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    throw new RuntimeException('Provide a valid email address.');
                 }
-                $pdo->beginTransaction();
-                $pdo->prepare('UPDATE tickets SET status = :status, updated_at = :updated_at WHERE id = :id')
-                    ->execute([
-                        'status' => $status,
-                        'updated_at' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
-                        'id' => $ticketId,
-                    ]);
-                $pdo->prepare('INSERT INTO ticket_messages (ticket_id, user_id, message, created_at) VALUES (:ticket_id, :user_id, :message, :created_at)')
-                    ->execute([
-                        'ticket_id' => $ticketId,
-                        'user_id' => $user['id'],
-                        'message' => $message,
-                        'created_at' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
-                    ]);
-                $pdo->commit();
-
-                $ticket = $pdo->prepare('SELECT t.subject, u.email, u.name FROM tickets t JOIN users u ON u.id = t.user_id WHERE t.id = :id');
-                $ticket->execute(['id' => $ticketId]);
-                if ($row = $ticket->fetch()) {
-                    $body = get_setting('email_template_ticket_reply');
-                    $replacements = [
-                        '{{name}}' => $row['name'],
-                        '{{subject}}' => $row['subject'],
-                        '{{message}}' => $message,
-                        '{{company}}' => get_setting('company_name', 'Service Portal'),
-                    ];
-                    send_notification_email($row['email'], 'Ticket update: ' . $row['subject'], strtr($body, $replacements));
+                $stmt = $pdo->prepare('SELECT COUNT(*) FROM users WHERE email = :email');
+                $stmt->execute(['email' => $email]);
+                if ((int) $stmt->fetchColumn() > 0) {
+                    throw new RuntimeException('That email address is already in use.');
                 }
-                flash('success', 'Reply sent.');
+                $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+                $pdo->prepare('INSERT INTO users (email, password_hash, name, role, created_at, updated_at) VALUES (:email, :password, :name, :role, :created, :updated)')->execute([
+                    'email' => $email,
+                    'password' => password_hash($password, PASSWORD_DEFAULT),
+                    'name' => $name,
+                    'role' => 'admin',
+                    'created' => $now,
+                    'updated' => $now,
+                ]);
+                flash('success', 'New admin account created.');
                 break;
             case 'create_order':
                 $serviceId = (int) ($_POST['service_id'] ?? 0);
@@ -177,29 +225,99 @@ if (is_post()) {
                     $custom = [];
                 }
                 $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
-                $pdo->prepare('INSERT INTO orders (user_id, service_id, payment_method, total_amount, form_data, created_at, updated_at)
-                    VALUES (:user_id, :service_id, :payment_method, :total_amount, :form_data, :created_at, :updated_at)')
+                $pdo->prepare('INSERT INTO orders (user_id, service_id, payment_method, total_amount, form_data, billing_interval, created_at, updated_at) VALUES (:user_id, :service_id, :payment_method, :total_amount, :form_data, :interval, :created_at, :updated_at)')
                     ->execute([
                         'user_id' => $user['id'],
                         'service_id' => $service['id'],
                         'payment_method' => $paymentMethod,
                         'total_amount' => $service['price'],
                         'form_data' => json_encode($custom, JSON_THROW_ON_ERROR),
+                        'interval' => $service['billing_interval'] ?? 'one_time',
                         'created_at' => $now,
                         'updated_at' => $now,
                     ]);
                 $orderId = (int) $pdo->lastInsertId();
 
-                $adminEmail = get_setting('support_email', 'support@example.com');
-                $template = get_setting('email_template_order');
-                $replacements = [
+                $templateData = [
                     '{{name}}' => $user['name'],
                     '{{service}}' => $service['name'],
                     '{{company}}' => get_setting('company_name', 'Service Portal'),
                 ];
-                send_notification_email($adminEmail, 'New order #' . $orderId, $user['name'] . ' placed an order for ' . $service['name'] . '.');
-                send_notification_email($user['email'], 'Order received: ' . $service['name'], strtr($template, $replacements));
+                $fallbackOrderBody = sprintf("Hi %s,\n\nThanks for your order of %s.", $user['name'], $service['name']);
+                send_templated_email($pdo, 'order_confirmation', $templateData, $user['email'], 'Order received', $fallbackOrderBody);
+                notify_admins($pdo, 'New order #' . $orderId . ' from ' . $user['name'], url_for('dashboard#orders'));
+                record_notification($pdo, $user['id'], 'Order #' . $orderId . ' placed for ' . $service['name'], url_for('dashboard#orders'));
+
+                if (in_array($service['billing_interval'], ['monthly', 'annual'], true)) {
+                    $intervalSpec = $service['billing_interval'] === 'monthly' ? '+1 month' : '+1 year';
+                    $nextBilling = (new \DateTimeImmutable())->modify($intervalSpec);
+                    $pdo->prepare('INSERT INTO subscriptions (order_id, user_id, service_id, interval, next_billing_at, status, created_at, updated_at) VALUES (:order_id, :user_id, :service_id, :interval, :next_billing_at, :status, :created_at, :updated_at)')->execute([
+                        'order_id' => $orderId,
+                        'user_id' => $user['id'],
+                        'service_id' => $service['id'],
+                        'interval' => $service['billing_interval'],
+                        'next_billing_at' => $nextBilling->format(\DateTimeInterface::ATOM),
+                        'status' => 'active',
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+                    $subscriptionId = (int) $pdo->lastInsertId();
+                } else {
+                    $subscriptionId = null;
+                }
+
+                $invoiceStmt = $pdo->prepare('INSERT INTO invoices (subscription_id, order_id, user_id, service_id, total, status, due_at, created_at, updated_at) VALUES (:subscription_id, :order_id, :user_id, :service_id, :total, :status, :due_at, :created_at, :updated_at)');
+                $invoiceStmt->execute([
+                    'subscription_id' => $subscriptionId,
+                    'order_id' => $orderId,
+                    'user_id' => $user['id'],
+                    'service_id' => $service['id'],
+                    'total' => $service['price'],
+                    'status' => 'pending',
+                    'due_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+
                 flash('success', 'Thanks! Your order has been submitted. We will follow up shortly.');
+                break;
+            case 'update_order_status':
+                require_login('admin');
+                $orderId = (int) ($_POST['order_id'] ?? 0);
+                $status = trim($_POST['payment_status'] ?? 'pending');
+                $reference = trim($_POST['payment_reference'] ?? '');
+                if ($orderId > 0) {
+                    $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+                    $pdo->prepare('UPDATE orders SET payment_status = :status, payment_reference = :reference, updated_at = :updated_at WHERE id = :id')
+                        ->execute([
+                            'status' => $status,
+                            'reference' => $reference,
+                            'updated_at' => $now,
+                            'id' => $orderId,
+                        ]);
+                    if ($status === 'paid') {
+                        $invoiceStmt = $pdo->prepare('UPDATE invoices SET status = "paid", paid_at = :paid_at, updated_at = :updated WHERE order_id = :order_id');
+                        $invoiceStmt->execute([
+                            'paid_at' => $now,
+                            'updated' => $now,
+                            'order_id' => $orderId,
+                        ]);
+                        $orderUser = $pdo->prepare('SELECT u.id AS user_id, u.email, u.name, s.name AS service_name, i.id AS invoice_id FROM orders o JOIN users u ON u.id = o.user_id JOIN services s ON s.id = o.service_id LEFT JOIN invoices i ON i.order_id = o.id WHERE o.id = :id LIMIT 1');
+                        $orderUser->execute(['id' => $orderId]);
+                        if ($row = $orderUser->fetch()) {
+                            $paymentReplacements = [
+                                '{{name}}' => $row['name'],
+                                '{{service}}' => $row['service_name'],
+                                '{{invoice}}' => (string) $row['invoice_id'],
+                                '{{company}}' => get_setting('company_name', 'Service Portal'),
+                            ];
+                            $paymentBody = sprintf("Hi %s,\n\nWe've recorded your payment for invoice #%s covering %s.", $row['name'], $row['invoice_id'], $row['service_name']);
+                            send_templated_email($pdo, 'invoice_payment_success', $paymentReplacements, $row['email'], 'Payment received', $paymentBody);
+                            record_notification($pdo, (int) $row['user_id'], 'Invoice #' . $row['invoice_id'] . ' paid successfully.', url_for('dashboard#orders'));
+                        }
+                    }
+                    flash('success', 'Order updated.');
+                }
                 break;
             case 'create_ticket':
                 $subject = trim($_POST['subject'] ?? '');
@@ -227,8 +345,48 @@ if (is_post()) {
                     ]);
                 $pdo->commit();
 
-                send_notification_email(get_setting('support_email', 'support@example.com'), 'New support ticket #' . $ticketId, $subject . "\n\n" . $message);
+                notify_admins($pdo, 'New ticket #' . $ticketId . ' from ' . $user['name'], url_for('dashboard#tickets'));
+                record_notification($pdo, $user['id'], 'Ticket #' . $ticketId . ' created', url_for('dashboard#tickets'));
                 flash('success', 'Support ticket created. We will be in touch soon.');
+                break;
+            case 'reply_ticket_admin':
+                require_login('admin');
+                $ticketId = (int) ($_POST['ticket_id'] ?? 0);
+                $message = trim($_POST['message'] ?? '');
+                $status = trim($_POST['status'] ?? 'open');
+                if ($ticketId <= 0 || $message === '') {
+                    throw new RuntimeException('Message text is required.');
+                }
+                $pdo->beginTransaction();
+                $pdo->prepare('UPDATE tickets SET status = :status, updated_at = :updated_at WHERE id = :id')
+                    ->execute([
+                        'status' => $status,
+                        'updated_at' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+                        'id' => $ticketId,
+                    ]);
+                $pdo->prepare('INSERT INTO ticket_messages (ticket_id, user_id, message, created_at) VALUES (:ticket_id, :user_id, :message, :created_at)')
+                    ->execute([
+                        'ticket_id' => $ticketId,
+                        'user_id' => $user['id'],
+                        'message' => $message,
+                        'created_at' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+                    ]);
+                $pdo->commit();
+
+                $ticket = $pdo->prepare('SELECT t.subject, u.email, u.name, u.id AS user_id FROM tickets t JOIN users u ON u.id = t.user_id WHERE t.id = :id');
+                $ticket->execute(['id' => $ticketId]);
+                if ($row = $ticket->fetch()) {
+                    $ticketReplacements = [
+                        '{{name}}' => $row['name'],
+                        '{{subject}}' => $row['subject'],
+                        '{{message}}' => $message,
+                        '{{company}}' => get_setting('company_name', 'Service Portal'),
+                    ];
+                    $ticketBody = sprintf("Hi %s,\n\nWe've replied to your ticket '%s':\n\n%s", $row['name'], $row['subject'], $message);
+                    send_templated_email($pdo, 'ticket_reply', $ticketReplacements, $row['email'], 'Ticket update', $ticketBody);
+                    record_notification($pdo, (int) $row['user_id'], 'New reply on ticket #' . $ticketId, url_for('dashboard#tickets'));
+                }
+                flash('success', 'Reply sent.');
                 break;
             case 'reply_ticket_client':
                 $ticketId = (int) ($_POST['ticket_id'] ?? 0);
@@ -250,16 +408,23 @@ if (is_post()) {
                         'id' => $ticketId,
                         'user_id' => $user['id'],
                     ]);
-                send_notification_email(get_setting('support_email', 'support@example.com'), 'Ticket reply #' . $ticketId, $message);
+                notify_admins($pdo, 'Client replied to ticket #' . $ticketId, url_for('dashboard#tickets'));
                 flash('success', 'Your reply has been posted.');
+                break;
+            case 'mark_notifications':
+                mark_notifications_read($pdo, (int) $user['id']);
+                flash('success', 'Notifications cleared.');
                 break;
         }
     } catch (Throwable $e) {
         flash('error', $e->getMessage());
     }
 
-    redirect('dashboard.php');
+    redirect('dashboard');
 }
+
+$notifications = get_notifications($pdo, (int) $user['id']);
+$unreadNotifications = array_filter($notifications, fn($notification) => empty($notification['read_at']));
 
 if ($user['role'] === 'admin') {
     $services = $pdo->query('SELECT * FROM services ORDER BY created_at DESC')->fetchAll();
@@ -271,8 +436,9 @@ if ($user['role'] === 'admin') {
     foreach ($ticketMessages as $message) {
         $messagesByTicket[$message['ticket_id']][] = $message;
     }
-    $pageTitle = 'Admin dashboard';
-    include __DIR__ . '/templates/admin_dashboard.php';
+    $templates = $pdo->query('SELECT * FROM email_templates ORDER BY name')->fetchAll();
+    $invoices = $pdo->query('SELECT i.*, u.name AS client_name, s.name AS service_name FROM invoices i JOIN users u ON u.id = i.user_id JOIN services s ON s.id = i.service_id ORDER BY i.created_at DESC')->fetchAll();
+    include __DIR__ . '/admin/dashboard.php';
     exit;
 }
 
@@ -280,6 +446,10 @@ $services = $pdo->query('SELECT * FROM services WHERE active = 1 ORDER BY name')
 $orderStmt = $pdo->prepare('SELECT o.*, s.name AS service_name FROM orders o JOIN services s ON s.id = o.service_id WHERE o.user_id = :user ORDER BY o.created_at DESC');
 $orderStmt->execute(['user' => $user['id']]);
 $orders = $orderStmt->fetchAll();
+
+$invoiceStmt = $pdo->prepare('SELECT i.*, s.name AS service_name FROM invoices i JOIN services s ON s.id = i.service_id WHERE i.user_id = :user ORDER BY i.created_at DESC');
+$invoiceStmt->execute(['user' => $user['id']]);
+$invoices = $invoiceStmt->fetchAll();
 
 $ticketStmt = $pdo->prepare('SELECT * FROM tickets WHERE user_id = :user ORDER BY updated_at DESC');
 $ticketStmt->execute(['user' => $user['id']]);
@@ -292,5 +462,4 @@ foreach ($messagesStmt->fetchAll() as $message) {
     $messagesByTicket[$message['ticket_id']][] = $message;
 }
 
-$pageTitle = 'Client dashboard';
 include __DIR__ . '/templates/client_dashboard.php';

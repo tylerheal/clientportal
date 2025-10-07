@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 
+if (!defined('APP_BOOTSTRAPPED')) {
+    define('APP_BOOTSTRAPPED', true);
+}
+
 session_start([
     'cookie_httponly' => true,
     'cookie_secure' => isset($_SERVER['HTTPS']),
@@ -19,6 +23,7 @@ function login(array $user): void
         'email' => $user['email'],
         'name' => $user['name'],
         'role' => $user['role'],
+        'totp_enabled' => (bool) ($user['totp_enabled'] ?? false),
     ];
 }
 
