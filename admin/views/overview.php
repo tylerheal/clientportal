@@ -56,11 +56,6 @@ foreach ($clients as $client) {
 $averageOrder = $paidOrdersCount > 0 ? $revenue / $paidOrdersCount : 0.0;
 $rangeText = sprintf('%s – %s', $start->format('M j, Y'), $today->format('M j, Y'));
 
-$chartPayload = [
-    'labels' => $chartLabels,
-    'series' => $chartSeries,
-];
-$chartJson = json_encode($chartPayload, JSON_THROW_ON_ERROR | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
 $currencySample = format_currency(1234.56);
 $currencyPrefix = '';
 $currencySuffix = '';
@@ -71,69 +66,22 @@ if (preg_match('/[^0-9,\.\s]+$/u', $currencySample, $matches)) {
     $currencySuffix = $matches[0];
 }
 
-$pageScripts[] = ['src' => url_for('static/js/chart.umd.min.js')];
-$inlineScripts[] = <<<'JS'
-document.addEventListener('DOMContentLoaded', function () {
-    const canvas = document.getElementById('ordersChart');
-    if (!canvas || typeof Chart === 'undefined') {
-        return;
-    }
-    const payload = canvas.dataset.chart ? JSON.parse(canvas.dataset.chart) : { labels: [], series: [] };
-    const currencyPrefix = canvas.dataset.prefix || '';
-    const currencySuffix = canvas.dataset.suffix || '';
-    const formatter = new Intl.NumberFormat(undefined, {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 2
-    });
-    const existing = Chart.getChart(canvas);
-    if (existing) {
-        existing.destroy();
-    }
-    const chart = new Chart(canvas, {
-        type: 'bar',
-        data: {
-            labels: payload.labels,
-            datasets: [{
-                label: 'Revenue',
-                data: payload.series,
-                backgroundColor: '#2f6bff',
-                borderRadius: 6,
-                borderSkipped: false,
-                barThickness: 18
-            }]
-        },
-        options: {
-            maintainAspectRatio: false,
-            animation: false,
-            scales: {
-                x: {
-                    grid: { display: false },
-                    ticks: { color: '#aab3c2' }
-                },
-                y: {
-                    grid: { color: 'rgba(255,255,255,0.06)' },
-                    ticks: {
-                        color: '#aab3c2',
-                        callback: function (value) {
-                            return currencyPrefix + formatter.format(value) + currencySuffix;
-                        }
-                    }
-                }
-            },
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: function (context) {
-                            return currencyPrefix + formatter.format(context.parsed.y) + currencySuffix;
-                        }
-                    }
-                }
-            }
-        }
-    });
-});
-JS;
+$dashboardPayload = [
+    'labels' => $chartLabels,
+    'series' => $chartSeries,
+    'revenue' => round($revenue, 2),
+    'newClients' => $newClients,
+    'averageOrder' => round($averageOrder, 2),
+    'rangeText' => $rangeText,
+    'currencyPrefix' => $currencyPrefix,
+    'currencySuffix' => $currencySuffix,
+];
+$dashboardJson = json_encode($dashboardPayload, JSON_THROW_ON_ERROR | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT);
+
+$pageScripts[] = [
+    'src' => url_for('static/js/chart.umd.min.js'),
+    'defer' => true,
+];
 ?>
 <section class="page-section">
     <?php foreach (['error', 'success'] as $flashType): ?>
@@ -146,46 +94,48 @@ JS;
         <div class="toolbar" style="justify-content: space-between;">
             <div class="range">
                 <input id="dateRangeText" value="<?= e($rangeText); ?>" readonly>
-                <button class="portal-icon-button" type="button" title="Today" aria-label="Jump to today">
-                    <svg viewBox="0 0 448 512" role="presentation" focusable="false">
-                        <path d="M128 0c17.7 0 32 14.3 32 32v32h128V32c0-17.7 14.3-32 32-32s32 14.3 32 32v32h40c26.5 0 48 21.5 48 48v48H0v-48C0 85.5 21.5 64 48 64h40V32C88 14.3 102.3 0 120 0h8Zm320 224v208c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V224h448ZM64 288v32h96v-32H64Zm160 0v32h96v-32h-96ZM64 384v32h96v-32H64Zm160 0v32h96v-32h-96Z" />
-                    </svg>
-                </button>
+                <button class="iconbtn" type="button" id="todayBtn" title="Today" aria-label="Jump to today">📅</button>
             </div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <div class="menu" data-menu>
-                    <button class="button button--ghost" data-menu-toggle>Reports ▾</button>
+                    <button class="btn ghost" type="button" data-menu-toggle>Reports ▾</button>
                     <div class="dropdown">
                         <a href="<?= e(url_for('admin/orders')); ?>">Sales report</a>
                         <a href="<?= e(url_for('admin/clients')); ?>">New clients</a>
                     </div>
                 </div>
                 <div class="menu" data-menu>
-                    <button class="button button--ghost" data-menu-toggle>Export ▾</button>
+                    <button class="btn ghost" type="button" data-menu-toggle>Export ▾</button>
                     <div class="dropdown">
-                        <a href="<?= e(url_for('admin/orders')); ?>">Export CSV</a>
-                        <a href="<?= e(url_for('admin/orders')); ?>">Export JSON</a>
+                        <a href="#" data-export="csv">Export CSV</a>
+                        <a href="#" data-export="json">Export JSON</a>
                     </div>
                 </div>
             </div>
         </div>
         <div style="margin-top:14px;height:240px;">
-            <canvas id="ordersChart" data-chart='<?= $chartJson; ?>' data-prefix="<?= e($currencyPrefix); ?>" data-suffix="<?= e($currencySuffix); ?>"></canvas>
+            <canvas
+                id="ordersChart"
+                data-dashboard='<?= $dashboardJson; ?>'
+                data-prefix="<?= e($currencyPrefix); ?>"
+                data-suffix="<?= e($currencySuffix); ?>"
+                height="200"
+            ></canvas>
         </div>
         <div class="kpis" style="margin-top:14px;">
             <div class="kpi">
                 <div class="label">Revenue</div>
-                <div class="value"><?= e(format_currency($revenue)); ?></div>
+                <div class="value" id="kpiRevenue"><?= e(format_currency($revenue)); ?></div>
                 <div class="small subtle">Last 30 days</div>
             </div>
             <div class="kpi">
                 <div class="label">New clients</div>
-                <div class="value"><?= number_format($newClients); ?></div>
+                <div class="value" id="kpiClients"><?= number_format($newClients); ?></div>
                 <div class="small subtle">Joined in range</div>
             </div>
             <div class="kpi">
                 <div class="label">Average order</div>
-                <div class="value"><?= e(format_currency($averageOrder)); ?></div>
+                <div class="value" id="kpiAOV"><?= e(format_currency($averageOrder)); ?></div>
                 <div class="small subtle">Paid orders only</div>
             </div>
         </div>
@@ -245,7 +195,7 @@ JS;
                     <h2>Recent orders</h2>
                     <p>Latest five purchases.</p>
                 </div>
-                <a class="button button--ghost" href="<?= e(url_for('admin/orders')); ?>">Manage</a>
+                <a class="btn ghost" href="<?= e(url_for('admin/orders')); ?>">Manage</a>
             </header>
             <div class="table-wrapper">
                 <table class="table small">
@@ -279,7 +229,7 @@ JS;
                     <h2>Support queue</h2>
                     <p>Keep response times tight.</p>
                 </div>
-                <a class="button button--ghost" href="<?= e(url_for('admin/tickets')); ?>">View all</a>
+                <a class="btn ghost" href="<?= e(url_for('admin/tickets')); ?>">View all</a>
             </header>
             <ul class="ticket-summary">
                 <?php foreach (array_slice($tickets, 0, 5) as $ticket): ?>
