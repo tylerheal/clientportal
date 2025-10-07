@@ -1,0 +1,25 @@
+<section class="container" style="min-height:100vh;display:flex;align-items:center;justify-content:center;">
+  <div class="card" style="width:min(420px, 90vw);">
+    <div style="display:flex;flex-direction:column;gap:1rem;text-align:center;">
+      <div>
+        <div class="badge">Client Portal</div>
+        <h1 style="margin:0.75rem 0 0;">Welcome back</h1>
+        <p style="color:var(--muted-text);margin:0;">Log in to access your dashboard, services and support tickets.</p>
+      </div>
+      <form method="POST" action="/auth/login" style="display:flex;flex-direction:column;gap:1rem;">
+        <div>
+          <label>Email</label>
+          <input type="email" name="email" required autocomplete="email" />
+        </div>
+        <div>
+          <label>Password</label>
+          <input type="password" name="password" required autocomplete="current-password" />
+        </div>
+        <button class="btn btn-primary" type="submit">Log in</button>
+      </form>
+      <p style="color:var(--muted-text);">
+        Don't have an account? <a href="/signup">Create one</a>
+      </p>
+    </div>
+  </div>
+</section>

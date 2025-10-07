@@ -1,0 +1,26 @@
+<div class="navbar">
+  <div class="container navbar-inner">
+    <div style="display:flex;align-items:center;gap:0.75rem;">
+      <img src="{{ logo_url }}" alt="Logo" style="height:42px;width:42px;object-fit:cover;border-radius:12px;background:rgba(79,70,229,0.1);" onerror="this.style.display='none'" />
+      <div>
+        <strong>{{ brand_name }}</strong>
+        <div style="color:var(--muted-text);font-size:0.85rem;">Client portal</div>
+      </div>
+    </div>
+    <div class="nav-links">
+      <a href="/client">Dashboard</a>
+      <a href="/client/services">Services</a>
+      <a href="/client/orders">Orders</a>
+      <a href="/client/tickets">Support</a>
+      <a href="/client/files">Files</a>
+      <form method="POST" action="/auth/logout" style="margin:0;">
+        <button class="btn btn-secondary" type="submit">Log out</button>
+      </form>
+    </div>
+  </div>
+</div>
+<section class="container" style="padding:2.5rem 0 4rem;">
+  <div class="card">
+    {{ content }}
+  </div>
+</section>

@@ -1,0 +1,14 @@
+<h1 style="margin-top:0;">Available services</h1>
+<p style="color:var(--muted-text);">Browse and order the services your team has shared with you.</p>
+<div id="client-services" class="grid two" style="margin-top:1.5rem;"></div>
+<dialog id="order-modal" style="border:none;border-radius:18px;padding:0;max-width:640px;width:90vw;">
+  <form id="order-form" method="dialog" style="padding:2rem;display:flex;flex-direction:column;gap:1rem;">
+    <h2 id="order-modal-title" style="margin:0;">Request service</h2>
+    <input type="hidden" name="service_id" />
+    <div id="order-form-fields"></div>
+    <div style="display:flex;justify-content:flex-end;gap:0.75rem;">
+      <button type="button" class="btn btn-secondary" data-close>Cancel</button>
+      <button type="submit" class="btn btn-primary">Submit order</button>
+    </div>
+  </form>
+</dialog>
