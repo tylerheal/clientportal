@@ -17,6 +17,7 @@
     --radius-md: 14px;
     --radius-sm: 10px;
     --shadow-sm: 0 8px 24px rgba(15, 23, 42, 0.08);
+    --shadow-md: 0 14px 32px rgba(15, 23, 42, 0.1);
     --shadow-lg: 0 32px 60px rgba(15, 23, 42, 0.12);
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
@@ -118,8 +119,9 @@ textarea {
 .card {
     background: var(--surface);
     border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-sm);
+    box-shadow: var(--shadow-md);
     padding: 1.8rem;
+    border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
 .card + .card {
@@ -512,6 +514,7 @@ textarea {
     min-height: 100vh;
     display: flex;
     background: var(--background);
+    align-items: stretch;
 }
 
 .dashboard-sidebar {
@@ -521,6 +524,9 @@ textarea {
     position: sticky;
     top: 0;
     height: 100vh;
+    align-self: flex-start;
+    overflow-y: auto;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     padding: 2.4rem 1.6rem;
@@ -654,46 +660,46 @@ textarea {
     list-style: none;
     border: 1px solid var(--border);
     border-radius: 999px;
-    padding: 0.45rem 0.7rem;
+    padding: 0.45rem 0.75rem;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.45rem;
+    background: var(--surface);
+    color: var(--text-muted);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
 }
 
 .notification-button::-webkit-details-marker {
     display: none;
 }
 
-.icon-bell,
-.icon-user {
-    position: relative;
+.notification-button:hover {
+    border-color: rgba(37, 99, 235, 0.3);
+    color: var(--primary);
+    box-shadow: var(--shadow-sm);
+}
+
+.notification-button--active {
+    border-color: rgba(37, 99, 235, 0.45);
+    color: var(--primary);
+}
+
+.icon {
+    display: inline-flex;
     width: 18px;
     height: 18px;
-    display: inline-block;
 }
 
-.icon-bell::before,
-.icon-user::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: currentColor;
-    mask-size: contain;
-    mask-repeat: no-repeat;
-    mask-position: center;
+.icon svg {
+    width: 100%;
+    height: 100%;
+    fill: currentColor;
 }
 
-.icon-bell::before {
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 448 512'%3E%3Cpath fill='currentColor' d='M224 512a64 64 0 0 0 64-64H160a64 64 0 0 0 64 64Zm215.4-149.1c-20.9-21.5-55.5-53.6-55.5-154.9 0-77.7-54.5-139.5-127.9-155.2V32a32 32 0 0 0-64 0v20.8C118.6 68.5 64 130.3 64 208c0 101.3-34.6 133.4-55.5 154.9A31.9 31.9 0 0 0 0 384c0 17.7 14.3 32 32 32h384c17.7 0 32-14.3 32-32a31.9 31.9 0 0 0-8.6-21.1Z'/%3E%3C/svg%3E");
-}
-
-.icon-user::before {
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 448 512'%3E%3Cpath fill='currentColor' d='M224 256A128 128 0 1 0 224 0a128 128 0 1 0 0 256zm-45.7 48C79.8 304 0 383.8 0 482.3 0 498.7 13.3 512 29.7 512h388.6c16.4 0 29.7-13.3 29.7-29.7C448 383.8 368.2 304 269.7 304z'/%3E%3C/svg%3E");
-}
-
-.icon-bell--active {
-    color: var(--primary);
+.profile-avatar .icon {
+    width: 20px;
+    height: 20px;
 }
 
 .notification-count {

@@ -16,6 +16,7 @@ $searchAction = $searchAction ?? url_for('dashboard');
 $bodyClass = $bodyClass ?? '';
 $activeKey = $activeKey ?? '';
 $brandInitials = brand_initials($company);
+$currentPath = trim(request_path(), '/');
 ?>
 <!doctype html>
 <html lang="en">
@@ -62,8 +63,12 @@ $brandInitials = brand_initials($company);
                         <input type="search" name="q" value="<?= e($_GET['q'] ?? ''); ?>" placeholder="Search the portal">
                     </form>
                     <details class="notification-details">
-                        <summary class="notification-button" title="Notifications">
-                            <span class="icon-bell<?= $unreadCount ? ' icon-bell--active' : ''; ?>" aria-hidden="true"></span>
+                        <summary class="notification-button<?= $unreadCount ? ' notification-button--active' : ''; ?>" title="Notifications" aria-label="Notifications">
+                            <span class="icon icon--bell" aria-hidden="true">
+                                <svg viewBox="0 0 448 512" role="presentation" focusable="false">
+                                    <path d="M224 512a64 64 0 0 0 64-64H160a64 64 0 0 0 64 64Zm215.4-149.1c-20.9-21.5-55.5-53.6-55.5-154.9 0-77.7-54.5-139.5-127.9-155.2V32a32 32 0 0 0-64 0v20.8C118.6 68.5 64 130.3 64 208c0 101.3-34.6 133.4-55.5 154.9A31.9 31.9 0 0 0 0 384c0 17.7 14.3 32 32 32h384c17.7 0 32-14.3 32-32a31.9 31.9 0 0 0-8.6-21.1Z" />
+                                </svg>
+                            </span>
                             <?php if ($unreadCount): ?>
                                 <span class="notification-count"><?= $unreadCount; ?></span>
                             <?php endif; ?>
@@ -73,7 +78,7 @@ $brandInitials = brand_initials($company);
                                 <strong>Notifications</strong>
                                 <form action="<?= e(url_for('dashboard')); ?>" method="post">
                                     <input type="hidden" name="action" value="mark_notifications">
-                                    <input type="hidden" name="redirect" value="<?= e(ltrim(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH), '/')); ?>">
+                                    <input type="hidden" name="redirect" value="<?= e($currentPath); ?>">
                                     <button type="submit">Mark all read</button>
                                 </form>
                             </header>
@@ -97,7 +102,11 @@ $brandInitials = brand_initials($company);
                             <?php if (!empty($user['avatar_url'])): ?>
                                 <img src="<?= e($user['avatar_url']); ?>" alt="<?= e($user['name'] ?? 'Profile'); ?>" onerror="this.remove();">
                             <?php else: ?>
-                                <span class="icon-user" aria-hidden="true"></span>
+                                <span class="icon icon--user" aria-hidden="true">
+                                    <svg viewBox="0 0 448 512" role="presentation" focusable="false">
+                                        <path d="M224 256A128 128 0 1 0 224 0a128 128 0 1 0 0 256zm-45.7 48C79.8 304 0 383.8 0 482.3 0 498.7 13.3 512 29.7 512h388.6c16.4 0 29.7-13.3 29.7-29.7C448 383.8 368.2 304 269.7 304z" />
+                                    </svg>
+                                </span>
                             <?php endif; ?>
                         </div>
                         <div class="profile-meta">

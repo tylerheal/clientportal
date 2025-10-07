@@ -1,11 +1,35 @@
 <?php
 declare(strict_types=1);
 
+if (!function_exists('str_starts_with')) {
+    function str_starts_with(string $haystack, string $needle): bool
+    {
+        return $needle === '' || strncmp($haystack, $needle, strlen($needle)) === 0;
+    }
+}
+
 function base_path(): string
 {
     $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
     $dir = rtrim(str_replace('\\', '/', dirname($scriptName)), '/');
     return $dir === '' ? '' : $dir;
+}
+
+function request_path(): string
+{
+    $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
+    $uri = '/' . ltrim($uri, '/');
+    $base = base_path();
+
+    if ($base !== '') {
+        if ($uri === $base) {
+            $uri = '/';
+        } elseif (str_starts_with($uri, $base . '/')) {
+            $uri = substr($uri, strlen($base));
+        }
+    }
+
+    return $uri === '' ? '/' : $uri;
 }
 
 function url_for(string $path = ''): string

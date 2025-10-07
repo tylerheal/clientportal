@@ -18,11 +18,28 @@ if (($current['name'] ?? '') !== $user['name'] || ($current['email'] ?? '') !== 
     login($user);
 }
 
-$pathInfo = trim(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH), '/');
+$pathInfo = trim(request_path(), '/');
 $segments = $pathInfo === '' ? [] : explode('/', $pathInfo);
-$viewInput = strtolower((string) ($_GET['view'] ?? ($segments[1] ?? 'overview')));
+$context = $segments[0] ?? '';
+if ($context === 'dashboard' || $context === 'admin') {
+    array_shift($segments);
+}
+$viewSource = $_GET['view'] ?? null;
+if ($context === 'admin') {
+    $viewSource = $_GET['admin_view'] ?? $viewSource;
+}
+$viewInput = strtolower((string) ($viewSource ?? ($segments[0] ?? 'overview')));
 $view = preg_replace('/[^a-z\-]+/', '', $viewInput) ?: 'overview';
-$resourceId = (int) ($_GET['resource_id'] ?? ($segments[2] ?? 0));
+$isAdminRoute = ($context === 'admin');
+if ($isAdminRoute) {
+    $_GET['admin_view'] = $view;
+}
+$userRole = $user['role'] ?? 'client';
+if ($isAdminRoute && $userRole !== 'admin') {
+    flash('error', 'You are not authorised to access that area.');
+    redirect('dashboard');
+}
+$resourceId = (int) ($_GET['resource_id'] ?? ($segments[1] ?? 0));
 $ticketDetailId = null;
 if ($view === 'tickets' && $resourceId > 0) {
     $view = 'ticket';

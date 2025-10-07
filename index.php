@@ -1,5 +1,7 @@
 <?php
-$path = trim(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH), '/');
+require __DIR__ . '/bootstrap.php';
+
+$path = trim(request_path(), '/');
 $segments = $path === '' ? [] : explode('/', $path);
 
 if ($path === '') {
@@ -10,20 +12,22 @@ if ($path === '') {
 $first = $segments[0] ?? null;
 
 if ($first === 'dashboard') {
-    $_GET['view'] = $segments[1] ?? 'overview';
-    if (isset($segments[2])) {
-        $_GET['resource_id'] = $segments[2];
+    array_shift($segments);
+    $_GET['view'] = $segments[0] ?? 'overview';
+    if (isset($segments[1])) {
+        $_GET['resource_id'] = $segments[1];
     }
     require __DIR__ . '/dashboard.php';
     return;
 }
 
 if ($first === 'admin') {
-    $_GET['admin_view'] = $segments[1] ?? 'overview';
-    if (isset($segments[2])) {
-        $_GET['resource_id'] = $segments[2];
+    array_shift($segments);
+    $_GET['admin_view'] = $segments[0] ?? 'overview';
+    if (isset($segments[1])) {
+        $_GET['resource_id'] = $segments[1];
     }
-    require __DIR__ . '/admin/dashboard.php';
+    require __DIR__ . '/dashboard.php';
     return;
 }
 
