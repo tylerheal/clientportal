@@ -892,7 +892,6 @@ if ($view === 'ticket') {
 $clientSidebar = [
     ['type' => 'group', 'label' => 'Activity'],
     ['key' => 'overview', 'label' => 'Overview', 'href' => url_for('dashboard')],
-    ['key' => 'notifications', 'label' => 'Notifications', 'href' => url_for('dashboard/notifications')],
     ['key' => 'orders', 'label' => 'Orders', 'href' => url_for('dashboard/orders')],
     ['key' => 'tickets', 'label' => 'Support', 'href' => url_for('dashboard/tickets')],
     ['type' => 'group', 'label' => 'Services'],

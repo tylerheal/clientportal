@@ -41,7 +41,7 @@ $unpaidInvoices = count(array_filter($invoices, fn($invoice) => $invoice['status
                     <h2>Latest orders</h2>
                     <p>Your five most recent orders.</p>
                 </div>
-                <a class="button button--ghost" href="<?= e(url_for('dashboard/orders')); ?>">View all</a>
+                <a class="button button--primary" href="<?= e(url_for('dashboard/orders')); ?>">View all</a>
             </header>
             <div class="table-wrapper">
                 <table class="table">
@@ -75,7 +75,7 @@ $unpaidInvoices = count(array_filter($invoices, fn($invoice) => $invoice['status
                     <h2>Support tickets</h2>
                     <p>Stay on top of conversations.</p>
                 </div>
-                <a class="button button--ghost" href="<?= e(url_for('dashboard/tickets')); ?>">Manage</a>
+                <a class="button button--primary" href="<?= e(url_for('dashboard/tickets')); ?>">Manage</a>
             </header>
             <ul class="ticket-summary">
                 <?php foreach (array_slice($tickets, 0, 5) as $ticket): ?>

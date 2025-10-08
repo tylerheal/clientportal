@@ -195,7 +195,7 @@ $pageScripts[] = [
                     <h2>Recent orders</h2>
                     <p>Latest five purchases.</p>
                 </div>
-                <a class="btn ghost" href="<?= e(url_for('admin/orders')); ?>">Manage</a>
+                <a class="btn primary" href="<?= e(url_for('admin/orders')); ?>">Manage</a>
             </header>
             <div class="table-wrapper">
                 <table class="table small">
@@ -229,7 +229,7 @@ $pageScripts[] = [
                     <h2>Support queue</h2>
                     <p>Keep response times tight.</p>
                 </div>
-                <a class="btn ghost" href="<?= e(url_for('admin/tickets')); ?>">View all</a>
+                <a class="btn primary" href="<?= e(url_for('admin/tickets')); ?>">View all</a>
             </header>
             <ul class="ticket-summary">
                 <?php foreach (array_slice($tickets, 0, 5) as $ticket): ?>

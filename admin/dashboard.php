@@ -6,7 +6,6 @@ if (!defined('APP_BOOTSTRAPPED')) {
 $adminSidebar = [
     ['type' => 'group', 'label' => 'Activity'],
     ['key' => 'overview', 'label' => 'Overview', 'href' => url_for('admin/overview')],
-    ['key' => 'notifications', 'label' => 'Notifications', 'href' => url_for('admin/notifications')],
     ['key' => 'orders', 'label' => 'Orders', 'href' => url_for('admin/orders')],
     ['key' => 'tickets', 'label' => 'Tickets', 'href' => url_for('admin/tickets')],
     ['key' => 'clients', 'label' => 'Clients', 'href' => url_for('admin/clients')],
