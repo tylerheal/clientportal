@@ -76,10 +76,40 @@ function admin_user_ids(PDO $pdo): array
     return $ids;
 }
 
+function admin_notification_emails(PDO $pdo): array
+{
+    $emails = [];
+
+    foreach ($pdo->query("SELECT email FROM users WHERE role = 'admin'") as $row) {
+        $email = strtolower(trim((string) ($row['email'] ?? '')));
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $emails[] = $email;
+        }
+    }
+
+    $supportEmail = trim((string) get_setting('support_email', ''));
+    if ($supportEmail !== '' && filter_var($supportEmail, FILTER_VALIDATE_EMAIL)) {
+        $emails[] = strtolower($supportEmail);
+    }
+
+    return array_values(array_unique($emails));
+}
+
 function notify_admins(PDO $pdo, string $message, ?string $link = null): void
 {
+    $company = get_setting('company_name', 'Service Portal');
+    $subject = sprintf('[%s] %s', $company, $message);
+    $body = $message;
+    if ($link) {
+        $body .= "\n\nOpen: " . $link;
+    }
+
     foreach (admin_user_ids($pdo) as $adminId) {
         record_notification($pdo, $adminId, $message, $link);
+    }
+
+    foreach (admin_notification_emails($pdo) as $email) {
+        send_notification_email($email, $subject, $body);
     }
 }
 
