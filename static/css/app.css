@@ -77,6 +77,7 @@ a:hover {
   display: flex;
   flex-direction: column;
   z-index: 90;
+  color: #f8fafc;
 }
 
 .sidebar::-webkit-scrollbar {
@@ -133,7 +134,7 @@ a:hover {
 
 .nav .group {
   margin: 18px 8px 6px;
-  color: var(--muted);
+  color: rgba(229, 231, 235, 0.68);
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -146,17 +147,17 @@ a:hover {
   padding: 10px 14px;
   border-radius: 12px;
   border: 1px solid transparent;
-  color: var(--text);
+  color: #f8fafc;
   transition: background 0.2s ease, border 0.2s ease;
 }
 
 .nav a:hover {
-  background: rgba(59, 130, 246, 0.12);
-  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(123, 63, 242, 0.18);
+  border-color: rgba(123, 63, 242, 0.45);
 }
 
 .nav a.active {
-  background: linear-gradient(90deg, var(--brand-start), var(--brand-end));
+  background: linear-gradient(90deg, var(--brand-start) 0%, #a454f7 52%, var(--brand-end) 100%);
   border-color: transparent;
   color: #fff;
 }
@@ -192,7 +193,7 @@ a:hover {
 }
 
 .sidebar-footer a {
-  color: var(--muted);
+  color: rgba(229, 231, 235, 0.72);
   font-size: 0.85rem;
 }
 
@@ -259,6 +260,16 @@ a:hover {
   border-color: rgba(125, 138, 176, 0.35);
 }
 
+#menuBtn {
+  background: #0f1625;
+  border-color: #1f2937;
+  color: #f8fafc;
+}
+
+#menuBtn:hover {
+  border-color: #334155;
+}
+
 .avatar {
   display: inline-flex;
   align-items: center;
@@ -307,7 +318,37 @@ a:hover {
 
 .page-section {
   display: grid;
-  gap: 18px;
+  gap: 24px;
+}
+
+.grid,
+.row {
+  display: grid;
+  gap: 24px;
+}
+
+.grid.cols-2,
+.row.cols-2 {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.grid.cols-3,
+.row.cols-3 {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+@media (min-width: 1280px) {
+  .grid.cols-2,
+  .row.cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1480px) {
+  .grid.cols-3,
+  .row.cols-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .page-header {
@@ -703,7 +744,7 @@ a:hover {
 .button--primary,
 button.button--primary,
 input.button--primary {
-  background: linear-gradient(95deg, var(--brand-start) 0%, #a454f7 55%, var(--brand-end) 100%);
+  background: linear-gradient(90deg, var(--brand-start) 0%, #a454f7 55%, var(--brand-end) 100%);
   border: none;
   color: #fff;
 }
