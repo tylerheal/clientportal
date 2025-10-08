@@ -155,6 +155,12 @@ if (is_post()) {
                 $primaryColor = trim($_POST['brand_primary_color'] ?? '#3b82f6');
                 $fontFamily = trim($_POST['brand_font_family'] ?? 'Inter, sans-serif');
                 $supportEmail = trim($_POST['support_email'] ?? '');
+                $surfaceColor = trim($_POST['brand_surface_color'] ?? '#f4f6fb');
+                $cardColor = trim($_POST['brand_card_color'] ?? '#ffffff');
+                $controlColor = trim($_POST['brand_control_color'] ?? '#eef2ff');
+                $borderColor = trim($_POST['brand_border_color'] ?? '#dce1eb');
+                $textColor = trim($_POST['brand_text_color'] ?? '#111827');
+                $mutedColor = trim($_POST['brand_muted_color'] ?? '#6b7280');
                 $logoInput = trim($_POST['brand_logo_url'] ?? '');
                 $clearLogo = isset($_POST['clear_logo']) && $_POST['clear_logo'] === '1';
                 $currentLogo = get_setting('brand_logo_url', '');
@@ -217,6 +223,12 @@ if (is_post()) {
                     'brand_primary_color' => $primaryColor !== '' ? $primaryColor : '#3b82f6',
                     'brand_font_family' => $fontFamily !== '' ? $fontFamily : 'Inter, sans-serif',
                     'support_email' => $supportEmail,
+                    'brand_surface_color' => $surfaceColor !== '' ? $surfaceColor : '#f4f6fb',
+                    'brand_card_color' => $cardColor !== '' ? $cardColor : '#ffffff',
+                    'brand_control_color' => $controlColor !== '' ? $controlColor : '#eef2ff',
+                    'brand_border_color' => $borderColor !== '' ? $borderColor : '#dce1eb',
+                    'brand_text_color' => $textColor !== '' ? $textColor : '#111827',
+                    'brand_muted_color' => $mutedColor !== '' ? $mutedColor : '#6b7280',
                 ];
 
                 foreach ($settings as $key => $value) {
@@ -308,7 +320,12 @@ if (is_post()) {
                 break;
             case 'create_order':
                 $serviceId = (int) ($_POST['service_id'] ?? 0);
-                $paymentMethod = trim($_POST['payment_method'] ?? 'stripe');
+                $rawPaymentMethod = strtolower(trim($_POST['payment_method'] ?? 'manual'));
+                $paymentMethod = in_array($rawPaymentMethod, ['paypal', 'manual'], true) ? $rawPaymentMethod : 'manual';
+                $paypalEnabled = trim(get_setting('paypal_client_id', '')) !== '';
+                if ($paymentMethod === 'paypal' && !$paypalEnabled) {
+                    throw new RuntimeException('PayPal payments are not available right now.');
+                }
                 $serviceStmt = $pdo->prepare('SELECT * FROM services WHERE id = :id AND active = 1');
                 $serviceStmt->execute(['id' => $serviceId]);
                 $service = $serviceStmt->fetch();
@@ -373,8 +390,35 @@ if (is_post()) {
                     'created_at' => $now,
                     'updated_at' => $now,
                 ]);
+                $invoiceId = (int) $pdo->lastInsertId();
 
-                flash('success', 'Thanks! Your order has been submitted. We will follow up shortly.');
+                $response = [
+                    'invoice_id' => $invoiceId,
+                    'order_id' => $orderId,
+                    'service' => $service['name'],
+                    'amount' => (float) $service['price'],
+                    'currency' => currency_code(),
+                    'payment_method' => $paymentMethod,
+                ];
+
+                if ($paymentMethod === 'paypal' && is_ajax_request()) {
+                    header('Content-Type: application/json');
+                    echo json_encode($response, JSON_THROW_ON_ERROR);
+                    exit;
+                }
+
+                if (is_ajax_request()) {
+                    header('Content-Type: application/json');
+                    $response['message'] = 'Order created.';
+                    echo json_encode($response, JSON_THROW_ON_ERROR);
+                    exit;
+                }
+
+                if ($paymentMethod === 'paypal') {
+                    flash('success', 'Thanks! Complete the PayPal payment to confirm your order.');
+                } else {
+                    flash('success', 'Thanks! Your order has been submitted. We will follow up shortly.');
+                }
                 break;
             case 'create_paypal_order':
                 require_login();

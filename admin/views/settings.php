@@ -2,6 +2,12 @@
 $companyName = get_setting('company_name', 'Service Portal');
 $primaryColor = get_setting('brand_primary_color', '#2563eb');
 $fontFamily = get_setting('brand_font_family', 'Inter, sans-serif');
+$surfaceColor = get_setting('brand_surface_color', '#f4f6fb');
+$cardColor = get_setting('brand_card_color', '#ffffff');
+$controlColor = get_setting('brand_control_color', '#eef2ff');
+$borderColor = get_setting('brand_border_color', '#dce1eb');
+$textColor = get_setting('brand_text_color', '#111827');
+$mutedColor = get_setting('brand_muted_color', '#6b7280');
 $supportEmail = get_setting('support_email', '');
 $logoSetting = get_setting('brand_logo_url', '');
 $logoUrl = $logoSetting !== '' ? asset_url($logoSetting) : '';
@@ -57,6 +63,24 @@ $brandInitials = brand_initials($companyName);
                 </label>
                 <label>Font family
                     <input type="text" name="brand_font_family" value="<?= e($fontFamily); ?>" placeholder="Inter, sans-serif">
+                </label>
+                <label>Dashboard surface
+                    <input type="text" name="brand_surface_color" value="<?= e($surfaceColor); ?>" placeholder="#f4f6fb">
+                </label>
+                <label>Card background
+                    <input type="text" name="brand_card_color" value="<?= e($cardColor); ?>" placeholder="#ffffff">
+                </label>
+                <label>Control background
+                    <input type="text" name="brand_control_color" value="<?= e($controlColor); ?>" placeholder="#eef2ff">
+                </label>
+                <label>Border colour
+                    <input type="text" name="brand_border_color" value="<?= e($borderColor); ?>" placeholder="#dce1eb">
+                </label>
+                <label>Primary text colour
+                    <input type="text" name="brand_text_color" value="<?= e($textColor); ?>" placeholder="#111827">
+                </label>
+                <label>Muted text colour
+                    <input type="text" name="brand_muted_color" value="<?= e($mutedColor); ?>" placeholder="#6b7280">
                 </label>
                 <label>Logo URL
                     <input type="url" name="brand_logo_url" value="<?= e($logoSetting); ?>" placeholder="https://cdn.example.com/logo.svg">

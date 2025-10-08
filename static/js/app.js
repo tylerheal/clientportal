@@ -13,6 +13,35 @@
     };
     let closeInvoiceModal = () => {};
 
+    const sendForm = (endpoint, formData) => fetch(endpoint, {
+        method: 'POST',
+        body: formData,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    }).then(async (response) => {
+        let data = null;
+        try {
+            data = await response.json();
+        } catch (error) {
+            throw new Error('Unexpected response from the server.');
+        }
+        if (!response.ok || (data && data.error)) {
+            throw new Error((data && data.error) || 'Request failed.');
+        }
+        return data;
+    });
+
+    const sendAction = (endpoint, action, payload = {}) => {
+        const formData = new FormData();
+        formData.append('action', action);
+        formData.append('redirect', '');
+        Object.entries(payload).forEach(([key, value]) => {
+            if (value != null) {
+                formData.append(key, value);
+            }
+        });
+        return sendForm(endpoint, formData);
+    };
+
     const canvas = doc.getElementById('ordersChart');
     if (canvas) {
         state.currency.prefix = canvas.dataset.prefix || '';
@@ -341,6 +370,9 @@
         const container = invoiceModal.querySelector('[data-paypal-container]');
         const closeBtn = invoiceModal.querySelector('[data-invoice-close]');
         let paypalButtons = null;
+        let activeOrderId = null;
+        let activeOptions = {};
+        let activeDetails = null;
         const formatMoney = (amount, currency) => {
             try {
                 return new Intl.NumberFormat(undefined, {
@@ -371,33 +403,6 @@
             }, 150);
         });
 
-        const postAction = (action, payload) => {
-            const formData = new FormData();
-            formData.append('action', action);
-            formData.append('redirect', '');
-            Object.entries(payload).forEach(([key, value]) => {
-                if (value != null) {
-                    formData.append(key, value);
-                }
-            });
-            return fetch(actionEndpoint, {
-                method: 'POST',
-                body: formData,
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            }).then(async (response) => {
-                let data = null;
-                try {
-                    data = await response.json();
-                } catch (error) {
-                    throw new Error('Unexpected response from the server.');
-                }
-                if (!response.ok || (data && data.error)) {
-                    throw new Error((data && data.error) || 'Payment could not be processed.');
-                }
-                return data;
-            });
-        };
-
         const markInvoicePaid = (invoiceId) => {
             const status = doc.querySelector(`[data-invoice-status="${invoiceId}"]`);
             if (status) {
@@ -410,6 +415,22 @@
                 badge.className = 'badge badge--paid';
                 badge.textContent = 'Paid';
                 trigger.replaceWith(badge);
+            }
+        };
+
+        const emitPaid = (invoiceId, serviceName) => {
+            const detail = {
+                invoiceId,
+                orderId: activeOrderId,
+                service: serviceName || (activeDetails && activeDetails.service) || 'Invoice',
+            };
+            doc.dispatchEvent(new CustomEvent('portal:invoice-paid', { detail }));
+            if (activeOptions && typeof activeOptions.onPaid === 'function') {
+                try {
+                    activeOptions.onPaid(detail);
+                } catch (error) {
+                    console.error('portal:invoice-paid callback failed', error);
+                }
             }
         };
 
@@ -429,7 +450,7 @@
                             if (feedbackEl) {
                                 feedbackEl.textContent = 'Creating PayPal order…';
                             }
-                            return postAction('create_paypal_order', { invoice_id: details.id })
+                            return sendAction(actionEndpoint, 'create_paypal_order', { invoice_id: details.id })
                                 .then((data) => data.orderID)
                                 .catch((error) => {
                                     if (feedbackEl) {
@@ -442,7 +463,7 @@
                             if (feedbackEl) {
                                 feedbackEl.textContent = 'Capturing payment…';
                             }
-                            return postAction('capture_paypal_order', {
+                            return sendAction(actionEndpoint, 'capture_paypal_order', {
                                 invoice_id: details.id,
                                 paypal_order_id: data.orderID,
                             })
@@ -451,6 +472,7 @@
                                     if (feedbackEl) {
                                         feedbackEl.textContent = 'Payment complete. Thank you!';
                                     }
+                                    emitPaid(details.id, details.service);
                                     window.setTimeout(() => {
                                         closeInvoiceModal();
                                     }, 1500);
@@ -484,7 +506,10 @@
                 });
         };
 
-        const openInvoiceModal = (details) => {
+        const openInvoiceModal = (details, options = {}) => {
+            activeDetails = details;
+            activeOptions = options || {};
+            activeOrderId = details.orderId || null;
             invoiceModal.hidden = false;
             invoiceModal.classList.add('open');
             if (numberEl) {
@@ -495,12 +520,12 @@
                 summaryEl.textContent = `${details.service} · ${money}`;
             }
             if (feedbackEl) {
-                feedbackEl.textContent = '';
+                feedbackEl.textContent = options.message || '';
             }
             renderButtons(details);
         };
 
-        closeInvoiceModal = () => {
+        const closeModal = () => {
             if (!invoiceModal || invoiceModal.hidden) {
                 return;
             }
@@ -515,16 +540,34 @@
             if (paypalButtons && typeof paypalButtons.close === 'function') {
                 paypalButtons.close();
             }
+            activeOptions = {};
+            activeOrderId = null;
+            activeDetails = null;
         };
+
+        const paymentsAPI = {
+            open(details, options = {}) {
+                if (!details || !details.id) {
+                    return;
+                }
+                openInvoiceModal(details, options);
+            },
+            close: () => {
+                closeModal();
+            },
+        };
+
+        window.PortalPayments = paymentsAPI;
+        closeInvoiceModal = paymentsAPI.close;
 
         if (closeBtn) {
             closeBtn.addEventListener('click', () => {
-                closeInvoiceModal();
+                paymentsAPI.close();
             });
         }
         invoiceModal.addEventListener('click', (event) => {
             if (event.target === invoiceModal) {
-                closeInvoiceModal();
+                paymentsAPI.close();
             }
         });
 
@@ -539,7 +582,115 @@
                 if (!invoiceId || !amount) {
                     return;
                 }
-                openInvoiceModal({ id: invoiceId, amount, service, currency });
+                paymentsAPI.open({ id: invoiceId, amount, service, currency });
+            });
+        });
+    }
+
+    const serviceForms = Array.from(doc.querySelectorAll('[data-service-order-form]'));
+    if (serviceForms.length) {
+        const clearFeedback = (card) => {
+            if (!card) {
+                return;
+            }
+            const feedback = card.querySelector('[data-service-feedback]');
+            if (feedback) {
+                feedback.hidden = true;
+                feedback.textContent = '';
+                feedback.className = 'service-feedback';
+            }
+        };
+
+        const showFeedback = (card, message, tone = 'info') => {
+            if (!card) {
+                return;
+            }
+            const feedback = card.querySelector('[data-service-feedback]');
+            if (!feedback) {
+                return;
+            }
+            feedback.hidden = false;
+            feedback.textContent = message;
+            feedback.className = 'service-feedback';
+            if (tone) {
+                feedback.classList.add(`service-feedback--${tone}`);
+            }
+        };
+
+        serviceForms.forEach((form) => {
+            form.addEventListener('submit', (event) => {
+                const methodField = form.querySelector('[name="payment_method"]');
+                const paymentMethod = methodField ? methodField.value : 'manual';
+                if (paymentMethod !== 'paypal') {
+                    return;
+                }
+                if (!window.PortalPayments || typeof window.PortalPayments.open !== 'function') {
+                    return;
+                }
+
+                event.preventDefault();
+
+                const card = form.closest('[data-service-card]');
+                clearFeedback(card);
+
+                const submitBtn = form.querySelector('[type="submit"]');
+                const setLoading = (loading) => {
+                    if (!submitBtn) {
+                        return;
+                    }
+                    if (loading) {
+                        submitBtn.dataset.originalLabel = submitBtn.textContent;
+                        submitBtn.textContent = 'Preparing…';
+                        submitBtn.disabled = true;
+                    } else {
+                        submitBtn.disabled = false;
+                        if (submitBtn.dataset.originalLabel) {
+                            submitBtn.textContent = submitBtn.dataset.originalLabel;
+                            delete submitBtn.dataset.originalLabel;
+                        }
+                    }
+                };
+
+                setLoading(true);
+
+                const formData = new FormData(form);
+                formData.set('payment_method', 'paypal');
+                if (!formData.has('redirect')) {
+                    formData.append('redirect', 'dashboard/services');
+                }
+
+                const endpoint = form.getAttribute('action') || 'dashboard.php';
+                sendForm(endpoint, formData)
+                    .then((data) => {
+                        const invoiceId = Number(data.invoice_id || data.id);
+                        if (!invoiceId) {
+                            throw new Error('Unable to prepare the PayPal checkout.');
+                        }
+                        const amount = Number(data.amount ?? form.dataset.servicePrice ?? 0);
+                        const currency = data.currency || form.dataset.serviceCurrency || 'GBP';
+                        const service = data.service || form.dataset.serviceName || 'Invoice';
+
+                        showFeedback(card, 'Order saved. Complete the PayPal payment to confirm.', 'info');
+
+                        window.PortalPayments.open({
+                            id: invoiceId,
+                            orderId: data.order_id || null,
+                            amount: amount || 0,
+                            currency,
+                            service,
+                        }, {
+                            onPaid: () => {
+                                showFeedback(card, 'Payment complete! We’ll be in touch shortly.', 'success');
+                                form.reset();
+                            },
+                        });
+                    })
+                    .catch((error) => {
+                        showFeedback(card, error.message || 'Unable to create the order.', 'error');
+                    })
+                    .finally(() => {
+                        setLoading(false);
+                    });
             });
         });
     }

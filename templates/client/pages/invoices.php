@@ -84,13 +84,6 @@ if ($hasPaypal) {
         </div>
     </div>
 </section>
-<div class="modal-overlay" data-invoice-modal hidden data-action="<?= e(url_for('dashboard')); ?>">
-    <div class="modal-card">
-        <button class="modal-close" type="button" data-invoice-close>&times;</button>
-        <h3>Pay invoice <span data-invoice-number></span></h3>
-        <p>We’ll redirect you after PayPal confirms the payment.</p>
-        <div class="invoice-summary subtle" data-invoice-summary></div>
-        <div id="paypal-button-container" data-paypal-container></div>
-        <p class="subtle small" data-invoice-feedback></p>
-    </div>
-</div>
+<?php if ($hasPaypal): ?>
+    <?php include __DIR__ . '/../partials/payments_modal.php'; ?>
+<?php endif; ?>

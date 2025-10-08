@@ -336,8 +336,54 @@ function theme_styles(): string
 {
     $primary = get_setting('brand_primary_color', '#3b82f6');
     $font = get_setting('brand_font_family', 'Inter, sans-serif');
+    $surface = get_setting('brand_surface_color', '#f4f6fb');
+    $card = get_setting('brand_card_color', '#ffffff');
+    $control = get_setting('brand_control_color', '#eef2ff');
+    $border = get_setting('brand_border_color', '#dce1eb');
+    $text = get_setting('brand_text_color', '#111827');
+    $muted = get_setting('brand_muted_color', '#6b7280');
+    $tableHover = 'rgba(59, 130, 246, 0.08)';
 
-    return ":root { --brand-primary: {$primary}; --brand-primary-dark: {$primary}; --brand-font: {$font}; }";
+    $cardSoft = sprintf('color-mix(in srgb, %s 88%%, #f8fafc)', $card);
+
+    $styles = <<<CSS
+:root { --brand-primary: {$primary}; --brand-primary-dark: {$primary}; --brand-font: {$font}; }
+body.dashboard-body {
+    --bg: {$surface};
+    --panel: {$card};
+    --panel-2: {$card};
+    --panel-2: {$cardSoft};
+    --surface-contrast: {$control};
+    --control-bg: {$control};
+    --avatar-bg: {$control};
+    --metric-bg: {$cardSoft};
+    --table-hover: {$tableHover};
+    --border: {$border};
+    --text: {$text};
+    --muted: {$muted};
+}
+body.auth-body {
+    --bg: #0b0c10;
+    --panel: #111827;
+    --panel-2: #0f1625;
+    --surface-contrast: #0c1424;
+    --control-bg: #0f1625;
+    --avatar-bg: #162036;
+    --metric-bg: #10192d;
+    --table-hover: #0d1527;
+    --border: #1f2937;
+    --text: #e5e7eb;
+    --muted: #9aa7b8;
+}
+CSS;
+
+    return $styles;
+}
+
+function is_ajax_request(): bool
+{
+    return isset($_SERVER['HTTP_X_REQUESTED_WITH'])
+        && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
 }
 
 function brand_initials(string $name, string $fallback = 'SP'): string
