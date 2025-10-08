@@ -141,4 +141,36 @@ $smtpPasswordStored = get_setting('smtp_password', '') !== '';
             </div>
         </form>
     </div>
+    <div class="card">
+        <header class="card-header">
+            <div>
+                <h2>Send test email</h2>
+                <p>Confirm your mail settings by sending a sample template to any address.</p>
+            </div>
+        </header>
+        <form action="<?= e(url_for('dashboard')); ?>" method="post" class="settings-grid">
+            <input type="hidden" name="action" value="send_test_email">
+            <input type="hidden" name="redirect" value="admin/settings">
+            <div class="settings-fields">
+                <label>Send to email address
+                    <input type="email" name="test_email" placeholder="you@example.com" required>
+                </label>
+                <label>Email template
+                    <select name="template">
+                        <option value="">Generic delivery test</option>
+                        <?php foreach ($templates as $template): ?>
+                            <option value="<?= e($template['slug']); ?>"><?= e($template['name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <span class="hint">Choose a template to preview real placeholders or send a simple delivery ping.</span>
+                </label>
+                <?php if (!$templates): ?>
+                    <p class="hint">Create templates under Automations to test personalised messages.</p>
+                <?php endif; ?>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="button button--primary">Send test email</button>
+            </div>
+        </form>
+    </div>
 </section>
