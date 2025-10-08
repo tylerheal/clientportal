@@ -672,11 +672,11 @@ body.has-search-open {
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 10px;
+  gap: 8px;
   background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 22px 20px;
+  border-radius: 14px;
+  padding: 20px 18px;
   text-decoration: none;
   color: inherit;
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
@@ -685,20 +685,22 @@ body.has-search-open {
 .metric-label {
   display: block;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  margin-bottom: 2px;
 }
 
 .metric-value {
-  font-size: 1.75rem;
+  font-size: 1.4rem;
   font-weight: 700;
 }
 
 .metric-description {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
 }
 
 .metric-tile--link:hover,
