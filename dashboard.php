@@ -39,11 +39,18 @@ if ($isAdminRoute && $userRole !== 'admin') {
     flash('error', 'You are not authorised to access that area.');
     redirect('dashboard');
 }
-$resourceId = (int) ($_GET['resource_id'] ?? ($segments[1] ?? 0));
+$resourceSegment = $segments[1] ?? null;
+$resourceId = (int) ($_GET['resource_id'] ?? (ctype_digit((string) $resourceSegment) ? $resourceSegment : 0));
 $ticketDetailId = null;
-if ($view === 'tickets' && $resourceId > 0) {
-    $view = 'ticket';
-    $ticketDetailId = $resourceId;
+$creatingTicket = false;
+if ($view === 'tickets') {
+    if ($resourceSegment === 'new') {
+        $view = 'ticket';
+        $creatingTicket = true;
+    } elseif ($resourceId > 0) {
+        $view = 'ticket';
+        $ticketDetailId = $resourceId;
+    }
 }
 
 function admin_user_ids(PDO $pdo): array
@@ -861,16 +868,23 @@ if (!in_array($view, $clientViews, true)) {
 
 $selectedTicket = null;
 $selectedMessages = [];
-if ($view === 'ticket' && $ticketDetailId) {
-    foreach ($tickets as $ticket) {
-        if ((int) $ticket['id'] === $ticketDetailId) {
-            $selectedTicket = $ticket;
-            $selectedMessages = $messagesByTicket[$ticket['id']] ?? [];
-            break;
+if ($view === 'ticket') {
+    if ($creatingTicket) {
+        $selectedTicket = null;
+        $selectedMessages = [];
+    } elseif ($ticketDetailId) {
+        foreach ($tickets as $ticket) {
+            if ((int) $ticket['id'] === $ticketDetailId) {
+                $selectedTicket = $ticket;
+                $selectedMessages = $messagesByTicket[$ticket['id']] ?? [];
+                break;
+            }
         }
-    }
-    if (!$selectedTicket) {
-        flash('error', 'That ticket could not be found.');
+        if (!$selectedTicket) {
+            flash('error', 'That ticket could not be found.');
+            redirect('dashboard/tickets');
+        }
+    } else {
         redirect('dashboard/tickets');
     }
 }
@@ -896,8 +910,12 @@ $pageTitleMap = [
     'tickets' => 'Support tickets',
 ];
 $pageTitle = $pageTitleMap[$view] ?? 'Dashboard';
-if ($view === 'ticket' && $selectedTicket) {
-    $pageTitle = 'Ticket #' . $selectedTicket['id'];
+if ($view === 'ticket') {
+    if ($creatingTicket) {
+        $pageTitle = 'New support ticket';
+    } elseif ($selectedTicket) {
+        $pageTitle = 'Ticket #' . $selectedTicket['id'];
+    }
 }
 
 $activeKey = $view === 'ticket' ? 'tickets' : $view;
