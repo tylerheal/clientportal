@@ -166,7 +166,7 @@ a:hover {
 
 .nav a.active {
   background: linear-gradient(96deg, var(--brand-start) 0%, #a454f7 52%, #8b46f5 78%, var(--brand-end) 100%);
-  border-color: transparent;
+  border: none;
   color: #fff;
 }
 
