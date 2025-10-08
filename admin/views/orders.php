@@ -20,6 +20,7 @@
                         <th>Service</th>
                         <th>Status</th>
                         <th>Total</th>
+                        <th>Details</th>
                         <th>Update</th>
                     </tr>
                 </thead>
@@ -31,6 +32,49 @@
                             <td><?= e($order['service_name']); ?></td>
                             <td><span class="badge badge--<?= e($order['payment_status']); ?>"><?= e(ucfirst($order['payment_status'])); ?></span></td>
                             <td><?= format_currency((float) $order['total_amount']); ?></td>
+                            <td>
+                                <?php
+                                    $formData = [];
+                                    if (!empty($order['form_data'])) {
+                                        try {
+                                            $decoded = json_decode($order['form_data'], true, 512, JSON_THROW_ON_ERROR);
+                                            if (is_array($decoded)) {
+                                                $formData = $decoded;
+                                            }
+                                        } catch (Throwable $e) {
+                                            $formData = [];
+                                        }
+                                    }
+                                ?>
+                                <?php if ($formData): ?>
+                                    <dl class="order-details">
+                                        <?php foreach ($formData as $fieldKey => $fieldValue): ?>
+                                            <?php
+                                                $label = ucwords(str_replace(['_', '-'], ' ', (string) $fieldKey));
+                                                if (is_array($fieldValue)) {
+                                                    $value = implode(', ', array_map(static function ($item) {
+                                                        return is_scalar($item) ? (string) $item : '';
+                                                    }, $fieldValue));
+                                                } elseif (is_bool($fieldValue)) {
+                                                    $value = $fieldValue ? 'Yes' : 'No';
+                                                } else {
+                                                    $value = (string) $fieldValue;
+                                                }
+                                            ?>
+                                            <div class="order-details__row">
+                                                <dt><?= e($label); ?></dt>
+                                                <?php if ($value !== ''): ?>
+                                                    <dd><?= e($value); ?></dd>
+                                                <?php else: ?>
+                                                    <dd><span class="subtle">—</span></dd>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </dl>
+                                <?php else: ?>
+                                    <span class="subtle">—</span>
+                                <?php endif; ?>
+                            </td>
                             <td>
                                 <form action="<?= e(url_for('dashboard')); ?>" method="post" class="inline-form">
                                     <input type="hidden" name="action" value="update_order_status">
@@ -48,7 +92,7 @@
                         </tr>
                     <?php endforeach; ?>
                     <?php if (!$orders): ?>
-                        <tr><td colspan="6" class="table-empty">No orders found.</td></tr>
+                        <tr><td colspan="7" class="table-empty">No orders found.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>

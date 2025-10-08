@@ -781,6 +781,31 @@ body.has-search-open {
   background: var(--table-hover);
 }
 
+.order-details {
+  display: grid;
+  gap: 6px;
+  font-size: 0.8rem;
+}
+
+.order-details__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.order-details__row dt {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.order-details__row dd {
+  margin: 0;
+  justify-self: end;
+  text-align: right;
+  color: var(--text);
+}
+
 .text-right {
   text-align: right;
 }
