@@ -10,7 +10,7 @@
             <p>Track each order from submission through payment.</p>
         </div>
         <div class="page-actions">
-            <a class="button button--ghost" href="<?= e(url_for('dashboard/services')); ?>">New order</a>
+            <a class="button button--primary" href="<?= e(url_for('dashboard/services')); ?>">New order</a>
         </div>
     </header>
     <div class="card">

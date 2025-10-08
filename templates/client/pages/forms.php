@@ -10,7 +10,7 @@
             <p>Access the onboarding forms linked to your services.</p>
         </div>
         <div class="page-actions">
-            <a class="button button--ghost" href="<?= e(url_for('dashboard/services')); ?>">Browse services</a>
+            <a class="button button--primary" href="<?= e(url_for('dashboard/services')); ?>">Browse services</a>
         </div>
     </header>
     <div class="card">
@@ -34,7 +34,7 @@
                             </td>
                             <td><span class="badge badge--neutral"><?= $service['billing_interval'] === 'one_time' ? 'One-off' : ucfirst($service['billing_interval']); ?></span></td>
                             <td><?= count($fields); ?> fields</td>
-                            <td><a class="button button--ghost" href="<?= e(url_for('dashboard/services')); ?>">Start form</a></td>
+                            <td><a class="button button--primary" href="<?= e(url_for('dashboard/services')); ?>">Start form</a></td>
                         </tr>
                     <?php endforeach; ?>
                     <?php if (!$services): ?>

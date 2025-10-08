@@ -5,7 +5,7 @@
             <p>Preview the onboarding forms attached to each service.</p>
         </div>
         <div class="page-actions">
-            <a class="button button--ghost" href="<?= e(url_for('admin/services')); ?>">Manage services</a>
+            <a class="button button--primary" href="<?= e(url_for('admin/services')); ?>">Manage services</a>
         </div>
     </header>
     <div class="card">
