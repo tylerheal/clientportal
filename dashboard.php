@@ -291,6 +291,9 @@ if (is_post()) {
                 set_setting('stripe_secret_key', $_POST['stripe_secret_key'] ?? '');
                 set_setting('paypal_client_id', $_POST['paypal_client_id'] ?? '');
                 set_setting('paypal_client_secret', $_POST['paypal_client_secret'] ?? '');
+                set_setting('payments_enable_paypal', isset($_POST['enable_paypal']) ? '1' : '0');
+                set_setting('payments_enable_stripe', isset($_POST['enable_stripe']) ? '1' : '0');
+                set_setting('payments_enable_google_pay', isset($_POST['enable_google_pay']) ? '1' : '0');
                 $paypalMode = strtolower($_POST['paypal_mode'] ?? 'sandbox');
                 if (!in_array($paypalMode, ['sandbox', 'live'], true)) {
                     $paypalMode = 'sandbox';
@@ -328,10 +331,26 @@ if (is_post()) {
             case 'create_order':
                 $serviceId = (int) ($_POST['service_id'] ?? 0);
                 $rawPaymentMethod = strtolower(trim($_POST['payment_method'] ?? 'manual'));
-                $paymentMethod = in_array($rawPaymentMethod, ['paypal', 'manual'], true) ? $rawPaymentMethod : 'manual';
-                $paypalEnabled = trim(get_setting('paypal_client_id', '')) !== '';
-                if ($paymentMethod === 'paypal' && !$paypalEnabled) {
+                $availability = payments_available();
+                $allowedMethods = ['manual'];
+                if (!empty($availability['paypal'])) {
+                    $allowedMethods[] = 'paypal';
+                }
+                if (!empty($availability['stripe'])) {
+                    $allowedMethods[] = 'stripe';
+                }
+                if (!empty($availability['google_pay'])) {
+                    $allowedMethods[] = 'google_pay';
+                }
+                $paymentMethod = in_array($rawPaymentMethod, $allowedMethods, true) ? $rawPaymentMethod : 'manual';
+                if ($paymentMethod === 'paypal' && empty($availability['paypal'])) {
                     throw new RuntimeException('PayPal payments are not available right now.');
+                }
+                if ($paymentMethod === 'stripe' && empty($availability['stripe'])) {
+                    throw new RuntimeException('Stripe payments are not available right now.');
+                }
+                if ($paymentMethod === 'google_pay' && empty($availability['google_pay'])) {
+                    throw new RuntimeException('Google Pay is not available right now.');
                 }
                 $serviceStmt = $pdo->prepare('SELECT * FROM services WHERE id = :id AND active = 1');
                 $serviceStmt->execute(['id' => $serviceId]);
@@ -343,13 +362,17 @@ if (is_post()) {
                 if (!is_array($custom)) {
                     $custom = [];
                 }
+                $orderTotal = (float) ($_POST['order_total'] ?? $service['price']);
+                if ($orderTotal <= 0) {
+                    $orderTotal = (float) $service['price'];
+                }
                 $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
                 $pdo->prepare('INSERT INTO orders (user_id, service_id, payment_method, total_amount, form_data, billing_interval, created_at, updated_at) VALUES (:user_id, :service_id, :payment_method, :total_amount, :form_data, :interval, :created_at, :updated_at)')
                     ->execute([
                         'user_id' => $user['id'],
                         'service_id' => $service['id'],
                         'payment_method' => $paymentMethod,
-                        'total_amount' => $service['price'],
+                        'total_amount' => $orderTotal,
                         'form_data' => json_encode($custom, JSON_THROW_ON_ERROR),
                         'interval' => $service['billing_interval'] ?? 'one_time',
                         'created_at' => $now,
@@ -391,7 +414,7 @@ if (is_post()) {
                     'order_id' => $orderId,
                     'user_id' => $user['id'],
                     'service_id' => $service['id'],
-                    'total' => $service['price'],
+                    'total' => $orderTotal,
                     'status' => 'pending',
                     'due_at' => $now,
                     'created_at' => $now,
@@ -403,16 +426,10 @@ if (is_post()) {
                     'invoice_id' => $invoiceId,
                     'order_id' => $orderId,
                     'service' => $service['name'],
-                    'amount' => (float) $service['price'],
+                    'amount' => $orderTotal,
                     'currency' => currency_code(),
                     'payment_method' => $paymentMethod,
                 ];
-
-                if ($paymentMethod === 'paypal' && is_ajax_request()) {
-                    header('Content-Type: application/json');
-                    echo json_encode($response, JSON_THROW_ON_ERROR);
-                    exit;
-                }
 
                 if (is_ajax_request()) {
                     header('Content-Type: application/json');
@@ -447,6 +464,9 @@ if (is_post()) {
                     $paymentMethod = $invoice['payment_method'] ?? 'paypal';
                     if ($paymentMethod !== 'paypal') {
                         throw new RuntimeException('This invoice is not configured for PayPal payments.');
+                    }
+                    if (empty(payments_available()['paypal'])) {
+                        throw new RuntimeException('PayPal payments are not available right now.');
                     }
                     $amount = (float) $invoice['total'];
                     if ($amount <= 0) {
@@ -525,38 +545,139 @@ if (is_post()) {
                     if (!$captureId) {
                         throw new RuntimeException('PayPal has not confirmed the payment.');
                     }
+                    finalise_invoice_payment($pdo, $invoice, 'paypal', $captureId);
+                    echo json_encode(['status' => 'paid', 'capture' => $captureId], JSON_THROW_ON_ERROR);
+                } catch (Throwable $e) {
+                    http_response_code(400);
+                    echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
+                }
+                exit;
+            case 'create_stripe_intent':
+                require_login();
+                header('Content-Type: application/json');
+                $invoiceId = (int) ($_POST['invoice_id'] ?? 0);
+                $mode = strtolower(trim($_POST['mode'] ?? 'card'));
+                try {
+                    if ($invoiceId <= 0) {
+                        throw new RuntimeException('Invalid invoice specified.');
+                    }
+                    $availability = payments_available();
+                    if (empty($availability['stripe'])) {
+                        throw new RuntimeException('Stripe payments are not available right now.');
+                    }
+                    $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, o.payment_reference, s.name AS service_name FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id WHERE i.id = :id AND i.user_id = :user LIMIT 1');
+                    $invoiceStmt->execute(['id' => $invoiceId, 'user' => $user['id']]);
+                    $invoice = $invoiceStmt->fetch();
+                    if (!$invoice) {
+                        throw new RuntimeException('Invoice not found.');
+                    }
+                    if (($invoice['status'] ?? '') === 'paid' || ($invoice['payment_status'] ?? '') === 'paid') {
+                        throw new RuntimeException('This invoice has already been paid.');
+                    }
+                    $paymentMethod = $invoice['payment_method'] ?? 'stripe';
+                    if (!in_array($paymentMethod, ['stripe', 'google_pay'], true)) {
+                        throw new RuntimeException('This invoice is not configured for Stripe payments.');
+                    }
+                    if ($paymentMethod === 'google_pay' && empty($availability['google_pay'])) {
+                        throw new RuntimeException('Google Pay is not available right now.');
+                    }
+                    $amount = (float) $invoice['total'];
+                    if ($amount <= 0) {
+                        throw new RuntimeException('Invoice total must be greater than zero.');
+                    }
+                    $currency = currency_code();
+                    $description = sprintf('Invoice #%d – %s', (int) $invoice['id'], $invoice['service_name']);
+
+                    $params = [
+                        'amount' => to_minor_units($amount, $currency),
+                        'currency' => strtolower($currency),
+                        'automatic_payment_methods[enabled]' => 'true',
+                        'automatic_payment_methods[allow_redirects]' => 'never',
+                        'metadata[invoice_id]' => (string) $invoice['id'],
+                        'description' => $description,
+                    ];
+                    if ($mode === 'google_pay') {
+                        $params['payment_method_types[]'] = 'card';
+                    }
+
+                    $intent = stripe_api_request('POST', 'v1/payment_intents', $params);
+                    $intentId = $intent['id'] ?? null;
+                    $clientSecret = $intent['client_secret'] ?? null;
+                    if (!$intentId || !$clientSecret) {
+                        throw new RuntimeException('Unable to prepare the Stripe payment.');
+                    }
+
                     $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
-                    $pdo->beginTransaction();
-                    $pdo->prepare('UPDATE orders SET payment_status = "paid", payment_reference = :reference, updated_at = :updated WHERE id = :id AND user_id = :user')
+                    $pdo->prepare('UPDATE orders SET payment_reference = :reference, updated_at = :updated WHERE id = :id AND user_id = :user')
                         ->execute([
-                            'reference' => $captureId,
+                            'reference' => $intentId,
                             'updated' => $now,
                             'id' => $invoice['order_id'],
                             'user' => $user['id'],
                         ]);
-                    $pdo->prepare('UPDATE invoices SET status = "paid", paid_at = :paid_at, updated_at = :updated WHERE id = :id AND user_id = :user')
-                        ->execute([
-                            'paid_at' => $now,
-                            'updated' => $now,
-                            'id' => $invoice['id'],
-                            'user' => $user['id'],
-                        ]);
-                    $pdo->commit();
 
-                    $paymentReplacements = [
-                        '{{name}}' => $invoice['name'] ?? $user['name'],
-                        '{{service}}' => $invoice['service_name'],
-                        '{{invoice}}' => (string) $invoice['id'],
-                        '{{company}}' => get_setting('company_name', 'Service Portal'),
-                    ];
-                    $paymentBody = sprintf("Hi %s,\n\nWe've recorded your payment for invoice #%s covering %s.", $invoice['name'] ?? $user['name'], $invoice['id'], $invoice['service_name']);
-                    send_templated_email($pdo, 'invoice_payment_success', $paymentReplacements, $invoice['email'] ?? $user['email'], 'Payment received', $paymentBody);
-                    record_notification($pdo, (int) $user['id'], 'Invoice #' . $invoice['id'] . ' paid successfully.', url_for('dashboard/orders'));
-                    echo json_encode(['status' => 'paid', 'capture' => $captureId], JSON_THROW_ON_ERROR);
+                    $pdo->prepare('INSERT INTO payments (invoice_id, provider, reference, amount, status, created_at, updated_at) VALUES (:invoice_id, :provider, :reference, :amount, :status, :created_at, :updated_at)')
+                        ->execute([
+                            'invoice_id' => $invoice['id'],
+                            'provider' => $paymentMethod,
+                            'reference' => $intentId,
+                            'amount' => $amount,
+                            'status' => 'initiated',
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ]);
+
+                    echo json_encode([
+                        'intent' => $intentId,
+                        'client_secret' => $clientSecret,
+                        'publishable_key' => $availability['stripe_publishable'],
+                        'currency' => $currency,
+                        'amount' => $amount,
+                        'payment_method' => $paymentMethod,
+                    ], JSON_THROW_ON_ERROR);
                 } catch (Throwable $e) {
-                    if ($pdo->inTransaction()) {
-                        $pdo->rollBack();
+                    http_response_code(400);
+                    echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
+                }
+                exit;
+            case 'finalize_stripe_payment':
+                require_login();
+                header('Content-Type: application/json');
+                $invoiceId = (int) ($_POST['invoice_id'] ?? 0);
+                $intentId = trim($_POST['payment_intent'] ?? '');
+                try {
+                    if ($invoiceId <= 0 || $intentId === '') {
+                        throw new RuntimeException('Payment details were incomplete.');
                     }
+                    if (empty(payments_available()['stripe'])) {
+                        throw new RuntimeException('Stripe payments are not available right now.');
+                    }
+                    $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, s.name AS service_name, u.email, u.name FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id JOIN users u ON u.id = i.user_id WHERE i.id = :id AND i.user_id = :user LIMIT 1');
+                    $invoiceStmt->execute(['id' => $invoiceId, 'user' => $user['id']]);
+                    $invoice = $invoiceStmt->fetch();
+                    if (!$invoice) {
+                        throw new RuntimeException('Invoice not found.');
+                    }
+                    if (($invoice['status'] ?? '') === 'paid' || ($invoice['payment_status'] ?? '') === 'paid') {
+                        throw new RuntimeException('This invoice has already been paid.');
+                    }
+                    $paymentMethod = $invoice['payment_method'] ?? 'stripe';
+                    if (!in_array($paymentMethod, ['stripe', 'google_pay'], true)) {
+                        throw new RuntimeException('This invoice is not configured for Stripe payments.');
+                    }
+                    if ($paymentMethod === 'google_pay' && empty(payments_available()['google_pay'])) {
+                        throw new RuntimeException('Google Pay is not available right now.');
+                    }
+
+                    $intent = stripe_api_request('GET', 'v1/payment_intents/' . urlencode($intentId));
+                    $status = $intent['status'] ?? '';
+                    if ($status !== 'succeeded') {
+                        throw new RuntimeException('Stripe has not confirmed the payment.');
+                    }
+
+                    finalise_invoice_payment($pdo, $invoice, $paymentMethod, $intentId, (float) $invoice['total']);
+                    echo json_encode(['status' => 'paid'], JSON_THROW_ON_ERROR);
+                } catch (Throwable $e) {
                     http_response_code(400);
                     echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
                 }
@@ -861,6 +982,12 @@ foreach ($messagesStmt->fetchAll() as $message) {
     $messagesByTicket[$message['ticket_id']][] = $message;
 }
 
+$serviceFocus = strtolower(preg_replace('/[^a-z\-]/', '', $_GET['focus'] ?? ''));
+$validServiceFocus = ['malware-removal', 'care-plans', 'support'];
+if (!in_array($serviceFocus, $validServiceFocus, true)) {
+    $serviceFocus = 'malware-removal';
+}
+
 $clientViews = ['overview', 'notifications', 'services', 'forms', 'orders', 'invoices', 'tickets', 'ticket'];
 if (!in_array($view, $clientViews, true)) {
     $view = 'overview';
@@ -895,8 +1022,9 @@ $clientSidebar = [
     ['key' => 'orders', 'label' => 'Orders', 'href' => url_for('dashboard/orders')],
     ['key' => 'tickets', 'label' => 'Support', 'href' => url_for('dashboard/tickets')],
     ['type' => 'group', 'label' => 'Services'],
-    ['key' => 'services', 'label' => 'Services', 'href' => url_for('dashboard/services')],
-    ['key' => 'forms', 'label' => 'Forms', 'href' => url_for('dashboard/forms')],
+    ['key' => 'service-malware-removal', 'label' => 'Malware removal', 'href' => url_for('dashboard/services?focus=malware-removal')],
+    ['key' => 'service-care-plans', 'label' => 'WordPress care plans', 'href' => url_for('dashboard/services?focus=care-plans')],
+    ['key' => 'service-support', 'label' => 'WordPress support', 'href' => url_for('dashboard/services?focus=support')],
     ['type' => 'group', 'label' => 'Billing'],
     ['key' => 'invoices', 'label' => 'Invoices', 'href' => url_for('dashboard/invoices')],
 ];
@@ -920,6 +1048,9 @@ if ($view === 'ticket') {
 }
 
 $activeKey = $view === 'ticket' ? 'tickets' : $view;
+if ($view === 'services') {
+    $activeKey = 'service-' . $serviceFocus;
+}
 $clientView = $view;
 $searchAction = $view === 'overview' ? url_for('dashboard') : url_for('dashboard/' . ($view === 'ticket' ? 'tickets' : $view));
 

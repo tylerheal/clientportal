@@ -156,6 +156,48 @@ function currency_code(): string
     return strlen($raw) === 3 ? $raw : 'GBP';
 }
 
+function is_truthy_setting(string $key, bool $default = false): bool
+{
+    $value = strtolower((string) get_setting($key, $default ? '1' : '0'));
+    return in_array($value, ['1', 'true', 'yes', 'on'], true);
+}
+
+function payments_available(): array
+{
+    static $cache = null;
+    if ($cache !== null) {
+        return $cache;
+    }
+
+    $stripePublishable = trim((string) get_setting('stripe_publishable_key', ''));
+    $stripeSecret = trim((string) get_setting('stripe_secret_key', ''));
+    $paypalId = trim((string) get_setting('paypal_client_id', ''));
+    $paypalSecret = trim((string) get_setting('paypal_client_secret', ''));
+
+    $stripeEnabled = is_truthy_setting('payments_enable_stripe') && $stripePublishable !== '' && $stripeSecret !== '';
+    $paypalEnabled = is_truthy_setting('payments_enable_paypal') && $paypalId !== '' && $paypalSecret !== '';
+    $googlePayEnabled = $stripeEnabled && is_truthy_setting('payments_enable_google_pay');
+
+    $cache = [
+        'stripe' => $stripeEnabled,
+        'paypal' => $paypalEnabled,
+        'google_pay' => $googlePayEnabled,
+        'stripe_publishable' => $stripePublishable,
+    ];
+
+    return $cache;
+}
+
+function stripe_publishable_key(): string
+{
+    return trim((string) get_setting('stripe_publishable_key', ''));
+}
+
+function stripe_secret_key(): string
+{
+    return trim((string) get_setting('stripe_secret_key', ''));
+}
+
 function format_currency(float $amount): string
 {
     $code = currency_code();
@@ -216,11 +258,71 @@ function paypal_mode(): string
     return $mode === 'live' ? 'live' : 'sandbox';
 }
 
+function stripe_api_request(string $method, string $path, array $params = []): array
+{
+    if (!function_exists('curl_init')) {
+        throw new RuntimeException('The cURL extension is required for Stripe integration.');
+    }
+
+    $secret = stripe_secret_key();
+    if ($secret === '') {
+        throw new RuntimeException('Stripe secret key is not configured.');
+    }
+
+    $url = str_starts_with($path, 'http') ? $path : 'https://api.stripe.com/' . ltrim($path, '/');
+    $ch = curl_init($url);
+    $options = [
+        CURLOPT_CUSTOMREQUEST => strtoupper($method),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
+        CURLOPT_USERPWD => $secret . ':',
+    ];
+
+    if (!empty($params)) {
+        $options[CURLOPT_POSTFIELDS] = http_build_query($params);
+    }
+
+    curl_setopt_array($ch, $options);
+    $response = curl_exec($ch);
+    if ($response === false) {
+        $error = curl_error($ch);
+        curl_close($ch);
+        throw new RuntimeException('Stripe request failed: ' . $error);
+    }
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    $data = json_decode($response, true);
+    if (!is_array($data)) {
+        throw new RuntimeException('Unexpected response from Stripe.');
+    }
+    if ($status >= 400) {
+        $message = $data['error']['message'] ?? 'Stripe request failed.';
+        throw new RuntimeException($message);
+    }
+
+    return $data;
+}
+
 function paypal_api_base(): string
 {
     return paypal_mode() === 'live'
         ? 'https://api-m.paypal.com'
         : 'https://api-m.sandbox.paypal.com';
+}
+
+function currency_minor_unit(string $currency): int
+{
+    static $zeroDecimals = [
+        'BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA', 'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF',
+    ];
+    return in_array(strtoupper($currency), $zeroDecimals, true) ? 1 : 100;
+}
+
+function to_minor_units(float $amount, string $currency): int
+{
+    $multiplier = currency_minor_unit($currency);
+    return (int) round($amount * $multiplier);
 }
 
 function paypal_credentials(): array
@@ -330,6 +432,88 @@ function paypal_api_request(string $method, string $path, ?array $payload = null
     } while ($attempts < 2);
 
     throw new RuntimeException('PayPal request failed with repeated authentication errors.');
+}
+
+function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, string $reference, ?float $amount = null): void
+{
+    $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+    $invoiceId = (int) ($invoice['id'] ?? 0);
+    $orderId = (int) ($invoice['order_id'] ?? 0);
+    $userId = (int) ($invoice['user_id'] ?? 0);
+    $serviceName = $invoice['service_name'] ?? '';
+    $clientName = $invoice['name'] ?? ($invoice['client_name'] ?? '');
+    $clientEmail = $invoice['email'] ?? null;
+    $total = $amount ?? (float) ($invoice['total'] ?? 0);
+
+    if ($invoiceId <= 0 || $orderId <= 0 || $userId <= 0) {
+        throw new RuntimeException('Unable to record payment without complete invoice details.');
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('UPDATE orders SET payment_status = "paid", payment_reference = :reference, updated_at = :updated WHERE id = :id')
+            ->execute([
+                'reference' => $reference,
+                'updated' => $now,
+                'id' => $orderId,
+            ]);
+
+        $pdo->prepare('UPDATE invoices SET status = "paid", paid_at = :paid_at, updated_at = :updated WHERE id = :id')
+            ->execute([
+                'paid_at' => $now,
+                'updated' => $now,
+                'id' => $invoiceId,
+            ]);
+
+        $update = $pdo->prepare('UPDATE payments SET status = :status, updated_at = :updated WHERE invoice_id = :invoice_id AND provider = :provider AND reference = :reference');
+        $update->execute([
+            'status' => 'paid',
+            'updated' => $now,
+            'invoice_id' => $invoiceId,
+            'provider' => $provider,
+            'reference' => $reference,
+        ]);
+
+        if ($update->rowCount() === 0) {
+            $pdo->prepare('INSERT INTO payments (invoice_id, provider, reference, amount, status, created_at, updated_at) VALUES (:invoice_id, :provider, :reference, :amount, :status, :created_at, :updated_at)')
+                ->execute([
+                    'invoice_id' => $invoiceId,
+                    'provider' => $provider,
+                    'reference' => $reference,
+                    'amount' => $total,
+                    'status' => 'paid',
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+        }
+
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+
+    $replacements = [
+        '{{name}}' => $clientName !== '' ? $clientName : 'there',
+        '{{service}}' => $serviceName,
+        '{{invoice}}' => (string) $invoiceId,
+        '{{company}}' => get_setting('company_name', 'Service Portal'),
+    ];
+
+    $body = sprintf(
+        "Hi %s,\n\nWe've recorded your payment for invoice #%s covering %s.",
+        $clientName !== '' ? $clientName : 'there',
+        $invoiceId,
+        $serviceName
+    );
+
+    if ($clientEmail) {
+        send_templated_email($pdo, 'invoice_payment_success', $replacements, $clientEmail, 'Payment received', $body);
+    }
+
+    record_notification($pdo, $userId, 'Invoice #' . $invoiceId . ' paid successfully.', url_for('dashboard/orders'));
 }
 
 function theme_styles(): string

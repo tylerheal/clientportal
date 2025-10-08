@@ -1,16 +1,19 @@
 <?php
-$paypalClientId = trim(get_setting('paypal_client_id', ''));
-$hasPaypal = $paypalClientId !== '';
+$availability = payments_available();
 $currency = currency_code();
-if ($hasPaypal) {
-    $pageScripts = $pageScripts ?? [];
+$pageScripts = $pageScripts ?? [];
+if (!empty($availability['paypal'])) {
     $paypalScript = sprintf(
         'https://www.paypal.com/sdk/js?client-id=%s&currency=%s&components=buttons&intent=capture',
-        rawurlencode($paypalClientId),
+        rawurlencode(get_setting('paypal_client_id', '')),
         rawurlencode($currency)
     );
     $pageScripts[] = ['src' => $paypalScript];
 }
+if (!empty($availability['stripe'])) {
+    $pageScripts[] = ['src' => 'https://js.stripe.com/v3/'];
+}
+$paymentReady = !empty($availability['paypal']) || !empty($availability['stripe']);
 ?>
 <section class="page-section">
     <?php foreach (['error', 'success'] as $flashType): ?>
@@ -58,9 +61,19 @@ if ($hasPaypal) {
                             <td><span class="badge badge--<?= e($invoice['status']); ?>" data-invoice-status="<?= (int) $invoice['id']; ?>"><?= e(ucfirst($invoice['status'])); ?></span></td>
                             <td><?= format_currency((float) $invoice['total']); ?></td>
                             <td class="text-right">
+                                <?php
+                                    $method = strtolower($invoice['payment_method'] ?? 'manual');
+                                    $canStripe = !empty($availability['stripe']);
+                                    $canGooglePay = $canStripe && !empty($availability['google_pay']);
+                                    $canPayPal = !empty($availability['paypal']);
+                                    $supportsStripe = $method === 'stripe' && $canStripe;
+                                    $supportsGooglePay = $method === 'google_pay' && $canGooglePay;
+                                    $supportsPayPal = $method === 'paypal' && $canPayPal;
+                                    $canPayOnline = ($supportsStripe || $supportsGooglePay || $supportsPayPal);
+                                ?>
                                 <?php if ($invoice['status'] === 'paid'): ?>
                                     <span class="badge badge--paid">Paid</span>
-                                <?php elseif ($hasPaypal && ($invoice['payment_method'] ?? 'paypal') === 'paypal'): ?>
+                                <?php elseif ($canPayOnline): ?>
                                     <button
                                         type="button"
                                         class="button button--primary"
@@ -69,6 +82,7 @@ if ($hasPaypal) {
                                         data-invoice-amount="<?= number_format((float) $invoice['total'], 2, '.', ''); ?>"
                                         data-invoice-currency="<?= e($currency); ?>"
                                         data-invoice-service="<?= e($invoice['service_name']); ?>"
+                                        data-invoice-method="<?= e($method); ?>"
                                     >Pay now</button>
                                 <?php else: ?>
                                     <span class="badge badge--muted">Awaiting manual payment</span>
@@ -84,6 +98,6 @@ if ($hasPaypal) {
         </div>
     </div>
 </section>
-<?php if ($hasPaypal): ?>
+<?php if ($paymentReady): ?>
     <?php include __DIR__ . '/../partials/payments_modal.php'; ?>
 <?php endif; ?>

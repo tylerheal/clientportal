@@ -15,6 +15,9 @@ return [
         'stripe_secret_key' => '',
         'paypal_client_id' => '',
         'paypal_client_secret' => '',
-        'paypal_mode' => 'sandbox'
+        'paypal_mode' => 'sandbox',
+        'enable_paypal' => false,
+        'enable_stripe' => false,
+        'enable_google_pay' => false,
     ]
 ];

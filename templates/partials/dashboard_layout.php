@@ -47,6 +47,9 @@ $iconMap = [
     'administrators' => '🛡️',
     'settings' => '⚙️',
     'dashboard' => '📊',
+    'service-malware-removal' => '🛡️',
+    'service-care-plans' => '🧰',
+    'service-support' => '🛎️',
 ];
 $brandHasLogo = (bool) $logo;
 ?>

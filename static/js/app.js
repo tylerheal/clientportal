@@ -447,12 +447,36 @@
         const numberEl = invoiceModal.querySelector('[data-invoice-number]');
         const summaryEl = invoiceModal.querySelector('[data-invoice-summary]');
         const feedbackEl = invoiceModal.querySelector('[data-invoice-feedback]');
-        const container = invoiceModal.querySelector('[data-paypal-container]');
+        const providerEl = invoiceModal.querySelector('[data-payment-provider]');
+        const paymentIntro = invoiceModal.querySelector('[data-payment-intro]');
+        const paypalContainer = invoiceModal.querySelector('[data-paypal-container]');
+        const stripePanel = invoiceModal.querySelector('[data-stripe-card]');
+        const stripeMount = stripePanel ? stripePanel.querySelector('[data-stripe-card-element]') : null;
+        const stripeSubmit = invoiceModal.querySelector('[data-stripe-submit]');
+        const stripeFeedback = invoiceModal.querySelector('[data-stripe-feedback]');
+        const paymentRequestPanel = invoiceModal.querySelector('[data-payment-request]');
+        const paymentRequestMount = paymentRequestPanel ? paymentRequestPanel.querySelector('[data-payment-request-button]') : null;
         const closeBtn = invoiceModal.querySelector('[data-invoice-close]');
         let paypalButtons = null;
-        let activeOrderId = null;
-        let activeOptions = {};
-        let activeDetails = null;
+
+        const state = {
+            details: null,
+            options: {},
+            orderId: null,
+            provider: 'paypal',
+        };
+
+        const stripeState = {
+            instance: null,
+            key: null,
+            elements: null,
+            card: null,
+            request: null,
+            requestButton: null,
+            clientSecret: null,
+            intentId: null,
+        };
+
         const formatMoney = (amount, currency) => {
             try {
                 return new Intl.NumberFormat(undefined, {
@@ -483,6 +507,73 @@
             }, 150);
         });
 
+        const hidePanels = () => {
+            if (paypalContainer) {
+                paypalContainer.hidden = true;
+                paypalContainer.innerHTML = '';
+            }
+            if (stripePanel) {
+                stripePanel.hidden = true;
+            }
+            if (paymentRequestPanel) {
+                paymentRequestPanel.hidden = true;
+            }
+            if (providerEl) {
+                providerEl.hidden = true;
+                providerEl.textContent = '';
+            }
+        };
+
+        const resetStripe = () => {
+            if (stripeState.card && typeof stripeState.card.unmount === 'function') {
+                stripeState.card.unmount();
+            }
+            if (stripeState.requestButton && typeof stripeState.requestButton.unmount === 'function') {
+                stripeState.requestButton.unmount();
+            }
+            stripeState.card = null;
+            stripeState.requestButton = null;
+            stripeState.request = null;
+            stripeState.clientSecret = null;
+            stripeState.intentId = null;
+            if (stripeFeedback) {
+                stripeFeedback.textContent = '';
+            }
+            if (stripeSubmit) {
+                stripeSubmit.disabled = false;
+                stripeSubmit.textContent = 'Pay now';
+            }
+        };
+
+        const ensureStripe = (publishableKey) => new Promise((resolve, reject) => {
+            if (!window.Stripe) {
+                reject(new Error('Stripe SDK not loaded.'));
+                return;
+            }
+            if (stripeState.instance && stripeState.key === publishableKey) {
+                resolve(stripeState.instance);
+                return;
+            }
+            stripeState.instance = window.Stripe(publishableKey);
+            stripeState.key = publishableKey;
+            stripeState.elements = null;
+            resolve(stripeState.instance);
+        });
+
+        const mountCardElement = () => {
+            if (!stripeState.instance || !stripeMount) {
+                return null;
+            }
+            if (!stripeState.elements) {
+                stripeState.elements = stripeState.instance.elements();
+            }
+            if (!stripeState.card) {
+                stripeState.card = stripeState.elements.create('card');
+                stripeState.card.mount(stripeMount);
+            }
+            return stripeState.card;
+        };
+
         const markInvoicePaid = (invoiceId) => {
             const status = doc.querySelector(`[data-invoice-status="${invoiceId}"]`);
             if (status) {
@@ -501,24 +592,125 @@
         const emitPaid = (invoiceId, serviceName) => {
             const detail = {
                 invoiceId,
-                orderId: activeOrderId,
-                service: serviceName || (activeDetails && activeDetails.service) || 'Invoice',
+                orderId: state.orderId,
+                service: serviceName || (state.details && state.details.service) || 'Invoice',
             };
             doc.dispatchEvent(new CustomEvent('portal:invoice-paid', { detail }));
-            if (activeOptions && typeof activeOptions.onPaid === 'function') {
+            if (state.options && typeof state.options.onPaid === 'function') {
                 try {
-                    activeOptions.onPaid(detail);
+                    state.options.onPaid(detail);
                 } catch (error) {
                     console.error('portal:invoice-paid callback failed', error);
                 }
             }
         };
 
-        const renderButtons = (details) => {
-            if (!container) {
+        const finalizeStripePayment = () => {
+            if (!state.details || !stripeState.intentId) {
+                return Promise.resolve();
+            }
+            if (feedbackEl) {
+                feedbackEl.textContent = 'Finalising payment…';
+            }
+            return sendAction(actionEndpoint, 'finalize_stripe_payment', {
+                invoice_id: state.details.id,
+                payment_intent: stripeState.intentId,
+            })
+                .then(() => {
+                    markInvoicePaid(state.details.id);
+                    if (feedbackEl) {
+                        feedbackEl.textContent = 'Payment complete. Thank you!';
+                    }
+                    emitPaid(state.details.id, state.details.service);
+                    window.setTimeout(() => {
+                        closeInvoiceModal();
+                    }, 1500);
+                })
+                .catch((error) => {
+                    if (feedbackEl) {
+                        feedbackEl.textContent = error.message || 'Unable to finalise the payment.';
+                    }
+                    throw error;
+                });
+        };
+
+        const setupPaymentRequest = (stripe, details) => {
+            if (!paymentRequestPanel || !paymentRequestMount) {
                 return;
             }
-            container.innerHTML = '';
+            const currency = (details.currency || 'GBP').toLowerCase();
+            const country = currency === 'gbp' ? 'GB' : 'US';
+            const amountMinor = Math.round((details.amount || 0) * 100);
+            const request = stripe.paymentRequest({
+                country,
+                currency,
+                total: {
+                    label: details.service || 'Invoice',
+                    amount: amountMinor,
+                },
+                requestPayerName: true,
+                requestPayerEmail: true,
+            });
+            stripeState.request = request;
+            request.canMakePayment().then((result) => {
+                if (!result) {
+                    paymentRequestPanel.hidden = true;
+                    return;
+                }
+                paymentRequestPanel.hidden = false;
+                if (stripeState.requestButton && typeof stripeState.requestButton.unmount === 'function') {
+                    stripeState.requestButton.unmount();
+                }
+                stripeState.requestButton = stripe.elements().create('paymentRequestButton', {
+                    paymentRequest: request,
+                    style: { paymentRequestButton: { type: 'buy', theme: 'dark' } },
+                });
+                stripeState.requestButton.mount(paymentRequestMount);
+            });
+            request.on('paymentmethod', async (event) => {
+                try {
+                    const { error } = await stripe.confirmCardPayment(stripeState.clientSecret, {
+                        payment_method: event.paymentMethod.id,
+                    }, { handleActions: false });
+                    if (error) {
+                        event.complete('fail');
+                        if (stripeFeedback) {
+                            stripeFeedback.textContent = error.message || 'Payment failed.';
+                        }
+                        return;
+                    }
+                    event.complete('success');
+                    const result = await stripe.confirmCardPayment(stripeState.clientSecret);
+                    if (result.error) {
+                        if (stripeFeedback) {
+                            stripeFeedback.textContent = result.error.message || 'Payment failed.';
+                        }
+                        return;
+                    }
+                    finalizeStripePayment();
+                } catch (error) {
+                    event.complete('fail');
+                    if (stripeFeedback) {
+                        stripeFeedback.textContent = error.message || 'Payment failed.';
+                    }
+                }
+            });
+        };
+
+        const openPayPal = (details) => {
+            hidePanels();
+            if (providerEl) {
+                providerEl.hidden = false;
+                providerEl.textContent = 'PayPal';
+            }
+            if (paymentIntro) {
+                paymentIntro.textContent = 'We’ll redirect you after PayPal confirms the payment.';
+            }
+            if (!paypalContainer) {
+                return;
+            }
+            paypalContainer.hidden = false;
+            paypalContainer.innerHTML = '';
             if (paypalButtons && typeof paypalButtons.close === 'function') {
                 paypalButtons.close();
             }
@@ -575,7 +767,7 @@
                         },
                     });
                     if (paypalButtons && paypalButtons.isEligible()) {
-                        return paypalButtons.render(container);
+                        return paypalButtons.render(paypalContainer);
                     }
                     throw new Error('PayPal checkout is not available.');
                 })
@@ -586,10 +778,61 @@
                 });
         };
 
+        const prepareStripe = (details, provider) => {
+            hidePanels();
+            resetStripe();
+            if (feedbackEl) {
+                feedbackEl.textContent = 'Preparing payment…';
+            }
+            sendAction(actionEndpoint, 'create_stripe_intent', {
+                invoice_id: details.id,
+                mode: provider === 'google_pay' ? 'google_pay' : 'card',
+            })
+                .then((payload) => ensureStripe(payload.publishable_key)
+                    .then((stripe) => {
+                        stripeState.instance = stripe;
+                        stripeState.clientSecret = payload.client_secret;
+                        stripeState.intentId = payload.intent;
+                        stripeState.provider = provider;
+                        if (stripeSubmit) {
+                            stripeSubmit.textContent = `Pay ${formatMoney(details.amount, details.currency || 'GBP')}`;
+                            stripeSubmit.disabled = false;
+                        }
+                        if (providerEl) {
+                            providerEl.hidden = false;
+                            providerEl.textContent = provider === 'google_pay' ? 'Google Pay' : 'Card payment';
+                        }
+                        if (paymentIntro) {
+                            paymentIntro.textContent = provider === 'google_pay'
+                                ? 'Use Google Pay on supported devices or enter your card details below.'
+                                : 'Enter your card details to complete payment.';
+                        }
+                        if (stripePanel) {
+                            stripePanel.hidden = false;
+                            mountCardElement();
+                        }
+                        if (provider === 'google_pay') {
+                            setupPaymentRequest(stripe, details);
+                        } else if (paymentRequestPanel) {
+                            paymentRequestPanel.hidden = true;
+                        }
+                        if (feedbackEl) {
+                            feedbackEl.textContent = '';
+                        }
+                    }))
+                .catch((error) => {
+                    hidePanels();
+                    if (feedbackEl) {
+                        feedbackEl.textContent = error.message || 'Unable to prepare the payment.';
+                    }
+                });
+        };
+
         const openInvoiceModal = (details, options = {}) => {
-            activeDetails = details;
-            activeOptions = options || {};
-            activeOrderId = details.orderId || null;
+            state.details = details;
+            state.options = options || {};
+            state.orderId = details.orderId || null;
+            state.provider = (details.paymentMethod || 'paypal').toLowerCase();
             invoiceModal.hidden = false;
             invoiceModal.classList.add('open');
             if (numberEl) {
@@ -602,7 +845,16 @@
             if (feedbackEl) {
                 feedbackEl.textContent = options.message || '';
             }
-            renderButtons(details);
+            hidePanels();
+            resetStripe();
+            const provider = state.provider;
+            if (provider === 'stripe' || provider === 'google_pay') {
+                prepareStripe(details, provider);
+            } else if (provider === 'paypal') {
+                openPayPal(details);
+            } else if (feedbackEl) {
+                feedbackEl.textContent = 'This invoice cannot be paid online.';
+            }
         };
 
         const closeModal = () => {
@@ -614,15 +866,15 @@
             if (feedbackEl) {
                 feedbackEl.textContent = '';
             }
-            if (container) {
-                container.innerHTML = '';
-            }
+            hidePanels();
+            resetStripe();
             if (paypalButtons && typeof paypalButtons.close === 'function') {
                 paypalButtons.close();
             }
-            activeOptions = {};
-            activeOrderId = null;
-            activeDetails = null;
+            paypalButtons = null;
+            state.details = null;
+            state.options = {};
+            state.orderId = null;
         };
 
         const paymentsAPI = {
@@ -630,7 +882,9 @@
                 if (!details || !details.id) {
                     return;
                 }
-                openInvoiceModal(details, options);
+                const merged = { ...details };
+                merged.paymentMethod = merged.paymentMethod || 'paypal';
+                openInvoiceModal(merged, options);
             },
             close: () => {
                 closeModal();
@@ -639,6 +893,39 @@
 
         window.PortalPayments = paymentsAPI;
         closeInvoiceModal = paymentsAPI.close;
+
+        if (stripeSubmit) {
+            stripeSubmit.addEventListener('click', () => {
+                if (!stripeState.instance || !stripeState.clientSecret || !stripeState.card) {
+                    return;
+                }
+                stripeSubmit.disabled = true;
+                if (stripeFeedback) {
+                    stripeFeedback.textContent = 'Confirming payment…';
+                }
+                stripeState.instance.confirmCardPayment(stripeState.clientSecret, {
+                    payment_method: {
+                        card: stripeState.card,
+                    },
+                })
+                    .then((result) => {
+                        if (result.error) {
+                            if (stripeFeedback) {
+                                stripeFeedback.textContent = result.error.message || 'Payment failed.';
+                            }
+                            stripeSubmit.disabled = false;
+                            return;
+                        }
+                        finalizeStripePayment();
+                    })
+                    .catch((error) => {
+                        if (stripeFeedback) {
+                            stripeFeedback.textContent = error.message || 'Payment failed.';
+                        }
+                        stripeSubmit.disabled = false;
+                    });
+            });
+        }
 
         if (closeBtn) {
             closeBtn.addEventListener('click', () => {
@@ -659,21 +946,30 @@
                 const amount = Number(trigger.getAttribute('data-invoice-amount'));
                 const currency = trigger.getAttribute('data-invoice-currency') || 'GBP';
                 const service = trigger.getAttribute('data-invoice-service') || 'Invoice';
+                const paymentMethod = (trigger.getAttribute('data-invoice-method') || 'paypal').toLowerCase();
                 if (!invoiceId || !amount) {
                     return;
                 }
-                paymentsAPI.open({ id: invoiceId, amount, service, currency });
+                paymentsAPI.open({ id: invoiceId, amount, service, currency, paymentMethod });
             });
         });
     }
 
     const serviceForms = Array.from(doc.querySelectorAll('[data-service-order-form]'));
     if (serviceForms.length) {
-        const clearFeedback = (card) => {
-            if (!card) {
+        const formatMoney = (amount, currency) => {
+            try {
+                return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
+            } catch (error) {
+                return `${currency} ${amount.toFixed(2)}`;
+            }
+        };
+
+        const clearFeedback = (wrapper) => {
+            if (!wrapper) {
                 return;
             }
-            const feedback = card.querySelector('[data-service-feedback]');
+            const feedback = wrapper.querySelector('[data-service-feedback]');
             if (feedback) {
                 feedback.hidden = true;
                 feedback.textContent = '';
@@ -681,11 +977,11 @@
             }
         };
 
-        const showFeedback = (card, message, tone = 'info') => {
-            if (!card) {
+        const showFeedback = (wrapper, message, tone = 'info') => {
+            if (!wrapper) {
                 return;
             }
-            const feedback = card.querySelector('[data-service-feedback]');
+            const feedback = wrapper.querySelector('[data-service-feedback]');
             if (!feedback) {
                 return;
             }
@@ -698,19 +994,141 @@
         };
 
         serviceForms.forEach((form) => {
+            const card = form.closest('.service-checkout');
+            const summaryTotal = card ? card.querySelector('[data-summary-total]') : null;
+            const planSummary = card ? card.querySelector('[data-plan-summary-label] dd') : null;
+            const hourSummary = card ? card.querySelector('[data-hour-summary] dd') : null;
+            const currency = form.dataset.serviceCurrency || 'GBP';
+            const orderField = form.querySelector('[data-order-total]');
+            const paymentField = form.querySelector('[name="payment_method"]');
+            const paymentOptions = Array.from(form.querySelectorAll('[data-payment-option]'));
+            const planCards = Array.from(form.querySelectorAll('[data-plan-choice]'));
+            const hourInput = form.querySelector('[data-hour-input]');
+            const serviceName = form.dataset.serviceName || 'Invoice';
+            const baseRate = Number(form.dataset.serviceRate || form.dataset.servicePrice || 0);
+
+            const updateTotal = (value) => {
+                const amount = Math.max(0, Number(value || 0));
+                if (orderField) {
+                    orderField.value = amount.toFixed(2);
+                }
+                if (summaryTotal) {
+                    summaryTotal.textContent = formatMoney(amount, currency);
+                }
+                return amount;
+            };
+
+            const setPaymentActive = (value) => {
+                paymentOptions.forEach((option, index) => {
+                    const optionValue = option.dataset.value || 'manual';
+                    const selected = optionValue === value || (!value && index === 0);
+                    option.classList.toggle('payment-option--active', selected);
+                    const input = option.querySelector('input');
+                    if (input) {
+                        input.checked = selected;
+                    }
+                });
+                if (paymentField) {
+                    paymentField.value = value;
+                }
+            };
+
+            const setPlanActive = (choice) => {
+                planCards.forEach((option) => option.classList.toggle('plan-card--active', option === choice));
+                if (!choice) {
+                    return;
+                }
+                const price = Number(choice.dataset.price || form.dataset.servicePrice || 0);
+                const labelNode = choice.querySelector('.plan-card__label');
+                const label = labelNode ? labelNode.textContent.trim() : choice.dataset.value || '';
+                form.dataset.servicePrice = Number.isFinite(price) ? price.toFixed(2) : form.dataset.servicePrice;
+                updateTotal(price);
+                if (planSummary && label) {
+                    planSummary.textContent = label;
+                }
+            };
+
+            const applyInitialState = () => {
+                if (planCards.length) {
+                    const defaultPlan = planCards.find((option) => {
+                        const input = option.querySelector('input');
+                        return input && input.checked;
+                    }) || planCards[0];
+                    if (defaultPlan) {
+                        const input = defaultPlan.querySelector('input');
+                        if (input) {
+                            input.checked = true;
+                        }
+                        setPlanActive(defaultPlan);
+                    }
+                } else {
+                    updateTotal(Number(form.dataset.servicePrice || 0));
+                }
+
+                if (hourInput) {
+                    const updateHours = () => {
+                        let hours = Number(hourInput.value || 1);
+                        if (!Number.isFinite(hours) || hours < 1) {
+                            hours = 1;
+                            hourInput.value = String(hours);
+                        }
+                        if (hourSummary) {
+                            hourSummary.textContent = `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+                        }
+                        const total = (Number(form.dataset.serviceRate || baseRate) || 0) * hours;
+                        updateTotal(total);
+                    };
+                    hourInput.addEventListener('input', updateHours);
+                    hourInput.addEventListener('change', updateHours);
+                    updateHours();
+                }
+
+                const initialPayment = paymentField ? paymentField.value || (paymentOptions[0] && paymentOptions[0].dataset.value) || 'manual' : (paymentOptions[0] && paymentOptions[0].dataset.value) || 'manual';
+                setPaymentActive(initialPayment);
+            };
+
+            planCards.forEach((choice) => {
+                const input = choice.querySelector('input');
+                if (!input) {
+                    return;
+                }
+                if (input.checked) {
+                    choice.classList.add('plan-card--active');
+                }
+                input.addEventListener('change', () => {
+                    if (input.checked) {
+                        setPlanActive(choice);
+                    }
+                });
+            });
+
+            paymentOptions.forEach((option) => {
+                const value = option.dataset.value || 'manual';
+                option.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    setPaymentActive(value);
+                });
+                const input = option.querySelector('input');
+                if (input) {
+                    input.addEventListener('change', () => {
+                        if (input.checked) {
+                            setPaymentActive(value);
+                        }
+                    });
+                }
+            });
+
+            applyInitialState();
+
             form.addEventListener('submit', (event) => {
-                const methodField = form.querySelector('[name="payment_method"]');
-                const paymentMethod = methodField ? methodField.value : 'manual';
-                if (paymentMethod !== 'paypal') {
+                const paymentMethod = (paymentField ? paymentField.value : null) || 'manual';
+                if (!['paypal', 'stripe', 'google_pay'].includes(paymentMethod)) {
                     return;
                 }
                 if (!window.PortalPayments || typeof window.PortalPayments.open !== 'function') {
                     return;
                 }
-
                 event.preventDefault();
-
-                const card = form.closest('[data-service-card]');
                 clearFeedback(card);
 
                 const submitBtn = form.querySelector('[type="submit"]');
@@ -732,36 +1150,36 @@
                 };
 
                 setLoading(true);
-
                 const formData = new FormData(form);
-                formData.set('payment_method', 'paypal');
+                formData.set('payment_method', paymentMethod);
                 if (!formData.has('redirect')) {
                     formData.append('redirect', 'dashboard/services');
                 }
-
                 const endpoint = form.getAttribute('action') || 'dashboard.php';
                 sendForm(endpoint, formData)
                     .then((data) => {
                         const invoiceId = Number(data.invoice_id || data.id);
                         if (!invoiceId) {
-                            throw new Error('Unable to prepare the PayPal checkout.');
+                            throw new Error('Unable to prepare the checkout.');
                         }
-                        const amount = Number(data.amount ?? form.dataset.servicePrice ?? 0);
-                        const currency = data.currency || form.dataset.serviceCurrency || 'GBP';
-                        const service = data.service || form.dataset.serviceName || 'Invoice';
+                        const amount = Number(data.amount ?? orderField?.value ?? form.dataset.servicePrice ?? 0);
+                        const currencyCode = data.currency || form.dataset.serviceCurrency || 'GBP';
+                        const service = data.service || serviceName;
 
-                        showFeedback(card, 'Order saved. Complete the PayPal payment to confirm.', 'info');
+                        showFeedback(card, 'Order saved. Complete the payment to confirm.', 'info');
 
                         window.PortalPayments.open({
                             id: invoiceId,
                             orderId: data.order_id || null,
-                            amount: amount || 0,
-                            currency,
+                            amount,
+                            currency: currencyCode,
                             service,
+                            paymentMethod,
                         }, {
                             onPaid: () => {
                                 showFeedback(card, 'Payment complete! We’ll be in touch shortly.', 'success');
                                 form.reset();
+                                applyInitialState();
                             },
                         });
                     })

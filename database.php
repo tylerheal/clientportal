@@ -275,6 +275,9 @@ function seed_default_settings(PDO $pdo): void
         'paypal_client_id' => '',
         'paypal_client_secret' => '',
         'paypal_mode' => 'sandbox',
+        'payments_enable_paypal' => '0',
+        'payments_enable_stripe' => '0',
+        'payments_enable_google_pay' => '0',
         'currency_code' => 'GBP',
         'support_email' => 'support@example.com'
     ];
