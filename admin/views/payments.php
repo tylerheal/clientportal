@@ -17,7 +17,7 @@ $paypalMode = strtolower(get_setting('paypal_mode', 'sandbox')) === 'live' ? 'li
     <header class="page-header">
         <div>
             <h2>Payment integrations</h2>
-            <p>Connect Stripe and PayPal to enable checkout flows.</p>
+            <p>Connect Stripe, Google Pay, and PayPal so clients can pay invoices and service orders directly from the portal.</p>
         </div>
     </header>
     <div class="card">
@@ -35,11 +35,13 @@ $paypalMode = strtolower(get_setting('paypal_mode', 'sandbox')) === 'live' ? 'li
             <label>Secret key
                 <input type="text" name="stripe_secret_key" value="<?= e($stripeSecret); ?>">
             </label>
+            <h3>Google Pay</h3>
+            <p class="hint">Google Pay is powered by your Stripe account. Enable Stripe above, then toggle it on here to surface the Google Pay button for supported browsers and devices.</p>
             <label class="switch">
                 <input type="checkbox" name="enable_google_pay"<?= $enableGooglePay ? ' checked' : ''; ?><?= !$enableStripe ? ' disabled' : ''; ?>>
-                <span>Offer Google Pay via Stripe</span>
+                <span><?= $enableStripe ? 'Offer Google Pay alongside cards' : 'Enable Stripe to unlock Google Pay'; ?></span>
             </label>
-            <p class="hint">Requires Stripe to be enabled and will display automatically on supported devices.</p>
+            <p class="hint">No additional keys are needed—Stripe handles the verification once this toggle is on.</p>
             <h3>PayPal</h3>
             <label class="switch">
                 <input type="checkbox" name="enable_paypal"<?= $enablePaypal ? ' checked' : ''; ?>>
