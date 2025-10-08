@@ -6,6 +6,7 @@ if (!defined('APP_BOOTSTRAPPED')) {
 $adminSidebar = [
     ['type' => 'group', 'label' => 'Activity'],
     ['key' => 'overview', 'label' => 'Overview', 'href' => url_for('admin/overview')],
+    ['key' => 'notifications', 'label' => 'Notifications', 'href' => url_for('admin/notifications')],
     ['key' => 'orders', 'label' => 'Orders', 'href' => url_for('admin/orders')],
     ['key' => 'tickets', 'label' => 'Tickets', 'href' => url_for('admin/tickets')],
     ['key' => 'clients', 'label' => 'Clients', 'href' => url_for('admin/clients')],
@@ -27,6 +28,7 @@ $pageTitleMap = [
     'services' => 'Services',
     'forms' => 'Forms',
     'orders' => 'Orders',
+    'notifications' => 'Notifications',
     'invoices' => 'Invoices',
     'tickets' => 'Tickets',
     'ticket' => 'Ticket detail',
@@ -52,6 +54,9 @@ switch ($view) {
         break;
     case 'orders':
         include __DIR__ . '/views/orders.php';
+        break;
+    case 'notifications':
+        include __DIR__ . '/views/notifications.php';
         break;
     case 'invoices':
         include __DIR__ . '/views/invoices.php';

@@ -30,6 +30,10 @@ $brandInitials = brand_initials($company);
 $currentPath = trim(request_path(), '/');
 $pageScripts = $scripts ?? $pageScripts ?? [];
 $inlineScripts = $inlineScripts ?? [];
+$notificationPreview = array_slice($notifications, 0, 3);
+$notificationsLink = is_admin($user ?? null)
+    ? url_for('admin/notifications')
+    : url_for('dashboard/notifications');
 $iconMap = [
     'overview' => '🏠',
     'orders' => '📦',
@@ -107,27 +111,35 @@ $brandHasLogo = (bool) $logo;
                             <?php endif; ?>
                         </summary>
                         <div class="notification-panel">
-                            <header>
-                                <strong>Notifications</strong>
-                                <form action="<?= e(url_for('dashboard')); ?>" method="post">
-                                    <input type="hidden" name="action" value="mark_notifications">
-                                    <input type="hidden" name="redirect" value="<?= e($currentPath); ?>">
-                                    <button type="submit">Mark all read</button>
-                                </form>
+                            <header class="notification-panel__header">
+                                <div class="notification-panel__title">
+                                    <strong>Notifications</strong>
+                                    <p>Latest activity in your workspace.</p>
+                                </div>
+                                <?php if ($notifications): ?>
+                                    <form action="<?= e(url_for('dashboard')); ?>" method="post" class="notification-panel__mark">
+                                        <input type="hidden" name="action" value="mark_notifications">
+                                        <input type="hidden" name="redirect" value="<?= e($currentPath); ?>">
+                                        <button type="submit" class="notification-panel__mark-btn">Mark all as read</button>
+                                    </form>
+                                <?php endif; ?>
                             </header>
-                            <ul>
-                                <?php foreach ($notifications as $note): ?>
-                                    <li class="<?= empty($note['read_at']) ? 'is-unread' : ''; ?>">
-                                        <a href="<?= e($note['link'] ?? url_for('dashboard')); ?>">
-                                            <span><?= e($note['message']); ?></span>
-                                            <time><?= e(format_datetime($note['created_at'])); ?></time>
+                            <ul class="notification-panel__list">
+                                <?php foreach ($notificationPreview as $note): ?>
+                                    <li class="notification-panel__item<?= empty($note['read_at']) ? ' is-unread' : ''; ?>">
+                                        <a class="notification-panel__link" href="<?= e($note['link'] ?? $notificationsLink); ?>">
+                                            <span class="notification-panel__message"><?= e($note['message']); ?></span>
+                                            <time class="notification-panel__time" datetime="<?= e($note['created_at']); ?>"><?= e(format_relative_time($note['created_at'])); ?></time>
                                         </a>
                                     </li>
                                 <?php endforeach; ?>
-                                <?php if (!$notifications): ?>
-                                    <li class="empty">You’re all caught up.</li>
+                                <?php if (!$notificationPreview): ?>
+                                    <li class="notification-panel__empty">You’re all caught up.</li>
                                 <?php endif; ?>
                             </ul>
+                            <footer class="notification-panel__footer">
+                                <a class="notification-panel__show-all" href="<?= e($notificationsLink); ?>">Show all<span aria-hidden="true"> →</span></a>
+                            </footer>
                         </div>
                     </details>
                     <a class="avatar" href="<?= e(url_for('profile')); ?>" aria-label="Profile &amp; security">

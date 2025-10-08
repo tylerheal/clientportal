@@ -165,7 +165,7 @@ a:hover {
 }
 
 .nav a.active {
-  background: linear-gradient(90deg, var(--brand-start) 0%, var(--brand-end) 100%);
+  background: linear-gradient(96deg, var(--brand-start) 0%, #a454f7 52%, #8b46f5 78%, var(--brand-end) 100%);
   border-color: transparent;
   color: #fff;
 }
@@ -1833,32 +1833,55 @@ label {
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
-  width: min(320px, 80vw);
+  width: min(360px, 86vw);
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  box-shadow: 0 18px 38px rgba(7, 10, 23, 0.5);
-  padding: 16px;
+  border-radius: 18px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.25);
+  padding: 18px;
   z-index: 95;
 }
 
-.notification-panel header {
+.notification-panel__header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
-.notification-panel form button {
+.notification-panel__title strong {
+  display: block;
+  font-size: 1rem;
+  margin-bottom: 2px;
+}
+
+.notification-panel__title p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.notification-panel__mark {
+  flex-shrink: 0;
+}
+
+.notification-panel__mark-btn {
   background: none;
   border: none;
-  color: var(--muted);
+  color: var(--brand-end);
   font-size: 0.8rem;
+  font-weight: 600;
   cursor: pointer;
+  padding: 4px 0;
 }
 
-.notification-panel ul {
+.notification-panel__mark-btn:hover,
+.notification-panel__mark-btn:focus-visible {
+  text-decoration: underline;
+}
+
+.notification-panel__list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1868,26 +1891,130 @@ label {
   overflow-y: auto;
 }
 
-.notification-panel li {
+.notification-panel__item {
+  border: 1px solid var(--border);
+  border-radius: 14px;
   background: var(--panel-2);
-  border-radius: 12px;
-  padding: 12px;
+  padding: 12px 14px;
 }
 
-.notification-panel li.is-unread {
-  border: 1px solid rgba(123, 63, 242, 0.45);
+.notification-panel__item.is-unread {
+  border-color: rgba(123, 63, 242, 0.45);
+  box-shadow: 0 0 0 1px rgba(123, 63, 242, 0.15);
 }
 
-.notification-panel li a {
+.notification-panel__link {
   display: flex;
   flex-direction: column;
   gap: 6px;
   color: inherit;
 }
 
-.notification-panel time {
+.notification-panel__message {
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.notification-panel__time {
   color: var(--muted);
   font-size: 0.75rem;
+}
+
+.notification-panel__empty {
+  padding: 18px;
+  border-radius: 14px;
+  text-align: center;
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--muted);
+}
+
+.notification-panel__footer {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.notification-panel__show-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--brand-end);
+  font-weight: 600;
+}
+
+.notification-panel__show-all:hover,
+.notification-panel__show-all:focus-visible {
+  text-decoration: underline;
+}
+
+.notification-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.notification-feed__item {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.notification-feed__item.is-unread {
+  border-color: rgba(123, 63, 242, 0.4);
+  box-shadow: 0 0 0 1px rgba(123, 63, 242, 0.18);
+}
+
+.notification-feed__link {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px;
+  color: inherit;
+}
+
+.notification-feed__message {
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.notification-feed__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.notification-feed__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: var(--brand-end);
+  font-weight: 600;
+}
+
+.notification-feed__link:hover .notification-feed__cta,
+.notification-feed__link:focus-visible .notification-feed__cta {
+  text-decoration: underline;
+}
+
+.notification-empty {
+  padding: 36px;
+  text-align: center;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.notifications-card__actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .table-toolbar {

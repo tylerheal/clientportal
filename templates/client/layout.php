@@ -19,6 +19,9 @@ switch ($view) {
     case 'orders':
         include __DIR__ . '/pages/orders.php';
         break;
+    case 'notifications':
+        include __DIR__ . '/pages/notifications.php';
+        break;
     case 'invoices':
         include __DIR__ . '/pages/invoices.php';
         break;

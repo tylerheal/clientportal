@@ -802,7 +802,7 @@ $notifications = get_notifications($pdo, (int) $user['id']);
 $unreadNotifications = array_filter($notifications, fn($notification) => empty($notification['read_at']));
 
 if ($user['role'] === 'admin') {
-    $adminViews = ['overview', 'services', 'orders', 'invoices', 'tickets', 'ticket', 'clients', 'automations', 'payments', 'administrators', 'forms', 'settings'];
+    $adminViews = ['overview', 'notifications', 'services', 'orders', 'invoices', 'tickets', 'ticket', 'clients', 'automations', 'payments', 'administrators', 'forms', 'settings'];
     if (!in_array($view, $adminViews, true)) {
         $view = 'overview';
     }
@@ -861,7 +861,7 @@ foreach ($messagesStmt->fetchAll() as $message) {
     $messagesByTicket[$message['ticket_id']][] = $message;
 }
 
-$clientViews = ['overview', 'services', 'forms', 'orders', 'invoices', 'tickets', 'ticket'];
+$clientViews = ['overview', 'notifications', 'services', 'forms', 'orders', 'invoices', 'tickets', 'ticket'];
 if (!in_array($view, $clientViews, true)) {
     $view = 'overview';
 }
@@ -892,6 +892,7 @@ if ($view === 'ticket') {
 $clientSidebar = [
     ['type' => 'group', 'label' => 'Activity'],
     ['key' => 'overview', 'label' => 'Overview', 'href' => url_for('dashboard')],
+    ['key' => 'notifications', 'label' => 'Notifications', 'href' => url_for('dashboard/notifications')],
     ['key' => 'orders', 'label' => 'Orders', 'href' => url_for('dashboard/orders')],
     ['key' => 'tickets', 'label' => 'Support', 'href' => url_for('dashboard/tickets')],
     ['type' => 'group', 'label' => 'Services'],
@@ -906,6 +907,7 @@ $pageTitleMap = [
     'services' => 'Services',
     'forms' => 'Forms',
     'orders' => 'Orders',
+    'notifications' => 'Notifications',
     'invoices' => 'Invoices',
     'tickets' => 'Support tickets',
 ];

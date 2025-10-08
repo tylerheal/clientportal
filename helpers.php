@@ -615,3 +615,59 @@ function format_datetime(?string $value): string
         return $value;
     }
 }
+
+function format_relative_time(?string $value): string
+{
+    if (!$value) {
+        return '';
+    }
+
+    try {
+        $target = new \DateTimeImmutable($value);
+    } catch (\Exception $e) {
+        return $value;
+    }
+
+    $now = new \DateTimeImmutable();
+    $seconds = $now->getTimestamp() - $target->getTimestamp();
+    $future = $seconds < 0;
+    $seconds = abs($seconds);
+
+    if ($seconds < 45) {
+        return $future ? 'in a few seconds' : 'Just now';
+    }
+    if ($seconds < 90) {
+        return $future ? 'in a minute' : '1 minute ago';
+    }
+
+    $minutes = (int) floor($seconds / 60);
+    if ($seconds < 3600) {
+        return $future ? sprintf('in %d minute%s', $minutes, $minutes === 1 ? '' : 's') : sprintf('%d minute%s ago', $minutes, $minutes === 1 ? '' : 's');
+    }
+
+    $hours = (int) floor($seconds / 3600);
+    if ($seconds < 86400) {
+        return $future ? sprintf('in %d hour%s', $hours, $hours === 1 ? '' : 's') : sprintf('%d hour%s ago', $hours, $hours === 1 ? '' : 's');
+    }
+
+    $days = (int) floor($seconds / 86400);
+    if ($seconds < 604800) {
+        if ($days === 1) {
+            return $future ? 'Tomorrow' : 'Yesterday';
+        }
+        return $future ? sprintf('in %d days', $days) : sprintf('%d days ago', $days);
+    }
+
+    $weeks = (int) floor($seconds / 604800);
+    if ($seconds < 2629800) { // ~1 month
+        return $future ? sprintf('in %d week%s', $weeks, $weeks === 1 ? '' : 's') : sprintf('%d week%s ago', $weeks, $weeks === 1 ? '' : 's');
+    }
+
+    $months = (int) floor($seconds / 2629800);
+    if ($seconds < 31557600) { // ~1 year
+        return $future ? sprintf('in %d month%s', $months, $months === 1 ? '' : 's') : sprintf('%d month%s ago', $months, $months === 1 ? '' : 's');
+    }
+
+    $years = (int) floor($seconds / 31557600);
+    return $future ? sprintf('in %d year%s', $years, $years === 1 ? '' : 's') : sprintf('%d year%s ago', $years, $years === 1 ? '' : 's');
+}
