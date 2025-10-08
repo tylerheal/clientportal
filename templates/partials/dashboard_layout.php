@@ -14,6 +14,15 @@ $sidebar = $sidebar ?? [];
 $pageTitle = $pageTitle ?? $company;
 $user = $user ?? current_user();
 $searchAction = $searchAction ?? url_for('dashboard');
+$searchScopes = $searchScopes ?? [
+    ['label' => 'Everything', 'value' => ''],
+    ['label' => 'Services', 'value' => 'services'],
+    ['label' => 'Orders', 'value' => 'orders'],
+    ['label' => 'Tickets', 'value' => 'tickets'],
+    ['label' => 'Messages', 'value' => 'messages'],
+    ['label' => 'Settings', 'value' => 'settings'],
+];
+$activeScope = $_GET['scope'] ?? '';
 $bodyClass = $bodyClass ?? '';
 $bodyClassAttr = trim('dashboard-ready ' . $bodyClass);
 $activeKey = $activeKey ?? '';
@@ -85,50 +94,52 @@ $brandHasLogo = (bool) $logo;
         <div class="main">
             <header class="topbar">
                 <button type="button" class="iconbtn" id="menuBtn" data-mobile-menu-toggle aria-label="Toggle navigation">☰</button>
-                <form action="<?= e($searchAction); ?>" method="get" class="search" role="search">
-                    <input type="search" name="q" value="<?= e($_GET['q'] ?? ''); ?>" placeholder="Search…" aria-label="Search the portal">
-                </form>
-                <button type="button" class="iconbtn" aria-label="Help">?</button>
-                <details class="notification-details" data-notifications>
-                    <summary class="iconbtn notification-button<?= $unreadCount ? ' notification-button--active' : ''; ?>" aria-label="Notifications">
-                        <span aria-hidden="true">🔔</span>
-                        <?php if ($unreadCount): ?>
-                            <span class="notification-count"><?= $unreadCount; ?></span>
-                        <?php endif; ?>
-                    </summary>
-                    <div class="notification-panel">
-                        <header>
-                            <strong>Notifications</strong>
-                            <form action="<?= e(url_for('dashboard')); ?>" method="post">
-                                <input type="hidden" name="action" value="mark_notifications">
-                                <input type="hidden" name="redirect" value="<?= e($currentPath); ?>">
-                                <button type="submit">Mark all read</button>
-                            </form>
-                        </header>
-                        <ul>
-                            <?php foreach ($notifications as $note): ?>
-                                <li class="<?= empty($note['read_at']) ? 'is-unread' : ''; ?>">
-                                    <a href="<?= e($note['link'] ?? url_for('dashboard')); ?>">
-                                        <span><?= e($note['message']); ?></span>
-                                        <time><?= e(format_datetime($note['created_at'])); ?></time>
-                                    </a>
-                                </li>
-                            <?php endforeach; ?>
-                            <?php if (!$notifications): ?>
-                                <li class="empty">You’re all caught up.</li>
+                <div class="topbar-actions">
+                    <button type="button" class="iconbtn" data-search-open aria-haspopup="dialog" aria-controls="searchModal" aria-label="Search">
+                        <span aria-hidden="true">🔍</span>
+                    </button>
+                    <button type="button" class="iconbtn" aria-label="Help">?</button>
+                    <details class="notification-details" data-notifications>
+                        <summary class="iconbtn notification-button<?= $unreadCount ? ' notification-button--active' : ''; ?>" aria-label="Notifications">
+                            <span aria-hidden="true">🔔</span>
+                            <?php if ($unreadCount): ?>
+                                <span class="notification-count"><?= $unreadCount; ?></span>
                             <?php endif; ?>
-                        </ul>
-                    </div>
-                </details>
-                <a class="avatar" href="<?= e(url_for('profile')); ?>" aria-label="Profile &amp; security">
-                    <?php if (!empty($user['avatar_url'])): ?>
-                        <img src="<?= e($user['avatar_url']); ?>" alt="<?= e($user['name'] ?? 'Profile'); ?>" onerror="this.remove();">
-                    <?php elseif (!empty($user['name'])): ?>
-                        <span aria-hidden="true"><?= e(function_exists('mb_substr') ? mb_substr($user['name'], 0, 1) : substr($user['name'], 0, 1)); ?></span>
-                    <?php else: ?>
-                        <span aria-hidden="true"><?= e($brandInitials); ?></span>
-                    <?php endif; ?>
-                </a>
+                        </summary>
+                        <div class="notification-panel">
+                            <header>
+                                <strong>Notifications</strong>
+                                <form action="<?= e(url_for('dashboard')); ?>" method="post">
+                                    <input type="hidden" name="action" value="mark_notifications">
+                                    <input type="hidden" name="redirect" value="<?= e($currentPath); ?>">
+                                    <button type="submit">Mark all read</button>
+                                </form>
+                            </header>
+                            <ul>
+                                <?php foreach ($notifications as $note): ?>
+                                    <li class="<?= empty($note['read_at']) ? 'is-unread' : ''; ?>">
+                                        <a href="<?= e($note['link'] ?? url_for('dashboard')); ?>">
+                                            <span><?= e($note['message']); ?></span>
+                                            <time><?= e(format_datetime($note['created_at'])); ?></time>
+                                        </a>
+                                    </li>
+                                <?php endforeach; ?>
+                                <?php if (!$notifications): ?>
+                                    <li class="empty">You’re all caught up.</li>
+                                <?php endif; ?>
+                            </ul>
+                        </div>
+                    </details>
+                    <a class="avatar" href="<?= e(url_for('profile')); ?>" aria-label="Profile &amp; security">
+                        <?php if (!empty($user['avatar_url'])): ?>
+                            <img src="<?= e($user['avatar_url']); ?>" alt="<?= e($user['name'] ?? 'Profile'); ?>" onerror="this.remove();">
+                        <?php elseif (!empty($user['name'])): ?>
+                            <span aria-hidden="true"><?= e(function_exists('mb_substr') ? mb_substr($user['name'], 0, 1) : substr($user['name'], 0, 1)); ?></span>
+                        <?php else: ?>
+                            <span aria-hidden="true"><?= e($brandInitials); ?></span>
+                        <?php endif; ?>
+                    </a>
+                </div>
             </header>
             <main>
                 <?= $content ?? ''; ?>
@@ -162,6 +173,36 @@ $brandHasLogo = (bool) $logo;
                 <a href="<?= e(url_for('profile')); ?>">Profile &amp; security</a>
                 <a href="<?= e(url_for('logout')); ?>">Sign out</a>
             </nav>
+        </div>
+    </div>
+    <div class="search-modal" id="searchModal" data-search-modal aria-hidden="true">
+        <div class="search-modal__backdrop" data-search-dismiss></div>
+        <div class="search-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="searchModalTitle">
+            <header class="search-modal__header">
+                <div>
+                    <h2 id="searchModalTitle">Search</h2>
+                    <p class="search-modal__hint">Search for pages, services, orders, tickets, or messages.</p>
+                </div>
+                <button type="button" class="iconbtn" data-search-dismiss aria-label="Close search">
+                    <span aria-hidden="true">✕</span>
+                </button>
+            </header>
+            <form action="<?= e($searchAction); ?>" method="get" class="search-modal__form" role="search">
+                <div class="search-modal__field">
+                    <span class="search-modal__icon" aria-hidden="true">🔍</span>
+                    <input type="search" name="q" value="<?= e($_GET['q'] ?? ''); ?>" placeholder="Search…" aria-label="Search the portal" data-search-input required>
+                    <input type="hidden" name="scope" value="<?= e($activeScope); ?>" data-search-scope>
+                    <button type="submit" class="btn primary">Search</button>
+                </div>
+                <div class="search-modal__chips" role="list">
+                    <?php foreach ($searchScopes as $scope): ?>
+                        <?php $isCurrent = ($scope['value'] ?? '') === $activeScope; ?>
+                        <button type="button" class="search-chip<?= $isCurrent ? ' search-chip--active' : ''; ?>" data-search-chip data-value="<?= e($scope['value']); ?>" role="listitem">
+                            <?= e($scope['label']); ?>
+                        </button>
+                    <?php endforeach; ?>
+                </div>
+            </form>
         </div>
     </div>
     <?php foreach ($pageScripts as $script): ?>

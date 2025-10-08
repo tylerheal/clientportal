@@ -12,6 +12,12 @@
         currency: { prefix: '', suffix: '' },
     };
     let closeInvoiceModal = () => {};
+    const searchModal = doc.querySelector('[data-search-modal]');
+    const searchOpeners = Array.from(doc.querySelectorAll('[data-search-open]'));
+    const searchDismissEls = Array.from(doc.querySelectorAll('[data-search-dismiss]'));
+    const searchInput = searchModal ? searchModal.querySelector('[data-search-input]') : null;
+    const searchScopeInput = searchModal ? searchModal.querySelector('[data-search-scope]') : null;
+    const searchChips = searchModal ? Array.from(searchModal.querySelectorAll('[data-search-chip]')) : [];
 
     const sendForm = (endpoint, formData) => fetch(endpoint, {
         method: 'POST',
@@ -82,13 +88,78 @@
         });
     }
 
-    doc.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') {
-            closeMobileMenu();
-            menus.forEach((menu) => menu.classList.remove('open'));
-            closeInvoiceModal();
+    const closeSearchModal = () => {
+        if (!searchModal) {
+            return;
         }
+        searchModal.classList.remove('is-open');
+        searchModal.setAttribute('aria-hidden', 'true');
+        doc.body.classList.remove('has-search-open');
+    };
+
+    const openSearchModal = () => {
+        if (!searchModal) {
+            return;
+        }
+        searchModal.classList.add('is-open');
+        searchModal.setAttribute('aria-hidden', 'false');
+        doc.body.classList.add('has-search-open');
+        if (searchInput) {
+            window.requestAnimationFrame(() => {
+                searchInput.focus();
+                searchInput.select();
+            });
+        }
+    };
+
+    const setSearchScope = (value) => {
+        if (searchScopeInput) {
+            searchScopeInput.value = value || '';
+        }
+        searchChips.forEach((chip) => {
+            if (chip.dataset.value === value) {
+                chip.classList.add('search-chip--active');
+            } else {
+                chip.classList.remove('search-chip--active');
+            }
+        });
+    };
+
+    searchOpeners.forEach((btn) => {
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            openSearchModal();
+        });
     });
+
+    searchDismissEls.forEach((btn) => {
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            closeSearchModal();
+        });
+    });
+
+    if (searchModal) {
+        searchModal.addEventListener('click', (event) => {
+            if (event.target === searchModal) {
+                closeSearchModal();
+            }
+        });
+    }
+
+    if (searchChips.length) {
+        searchChips.forEach((chip) => {
+            chip.addEventListener('click', (event) => {
+                event.preventDefault();
+                const value = chip.dataset.value || '';
+                setSearchScope(value);
+            });
+        });
+    }
+
+    if (searchScopeInput) {
+        setSearchScope(searchScopeInput.value || '');
+    }
 
     // Dropdown menus
     const menus = Array.from(doc.querySelectorAll('[data-menu]'));
@@ -109,6 +180,15 @@
                 menu.classList.remove('open');
             }
         });
+    });
+
+    doc.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeMobileMenu();
+            menus.forEach((menu) => menu.classList.remove('open'));
+            closeInvoiceModal();
+            closeSearchModal();
+        }
     });
 
     const ensureChart = () => {
