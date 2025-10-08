@@ -591,13 +591,15 @@ if (is_post()) {
                     $params = [
                         'amount' => to_minor_units($amount, $currency),
                         'currency' => strtolower($currency),
-                        'automatic_payment_methods[enabled]' => 'true',
-                        'automatic_payment_methods[allow_redirects]' => 'never',
                         'metadata[invoice_id]' => (string) $invoice['id'],
                         'description' => $description,
                     ];
+
                     if ($mode === 'google_pay') {
                         $params['payment_method_types[]'] = 'card';
+                    } else {
+                        $params['automatic_payment_methods[enabled]'] = 'true';
+                        $params['automatic_payment_methods[allow_redirects]'] = 'never';
                     }
 
                     $intent = stripe_api_request('POST', 'v1/payment_intents', $params);
