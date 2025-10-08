@@ -12,6 +12,14 @@ $supportEmail = get_setting('support_email', '');
 $logoSetting = get_setting('brand_logo_url', '');
 $logoUrl = $logoSetting !== '' ? asset_url($logoSetting) : '';
 $brandInitials = brand_initials($companyName);
+$mailFromName = get_setting('mail_from_name', $companyName);
+$mailFromAddress = get_setting('mail_from_address', $supportEmail ?: 'no-reply@example.com');
+$mailTransport = get_setting('mail_transport', 'mail');
+$smtpHost = get_setting('smtp_host', '');
+$smtpPort = get_setting('smtp_port', '587');
+$smtpUsername = get_setting('smtp_username', '');
+$smtpEncryption = get_setting('smtp_encryption', 'tls');
+$smtpPasswordStored = get_setting('smtp_password', '') !== '';
 ?>
 <section class="page-section">
     <?php foreach (['error', 'success'] as $flashType): ?>
@@ -86,6 +94,47 @@ $brandInitials = brand_initials($companyName);
                     <input type="url" name="brand_logo_url" value="<?= e($logoSetting); ?>" placeholder="https://cdn.example.com/logo.svg">
                     <span class="hint">Used when no uploaded file is present.</span>
                 </label>
+                <hr class="settings-divider">
+                <h3 class="settings-subheading">Email delivery</h3>
+                <p class="hint">Send portal notifications via Microsoft 365 (SMTP) or keep the built-in PHP mail transport.</p>
+                <label>From name
+                    <input type="text" name="mail_from_name" value="<?= e($mailFromName); ?>" placeholder="<?= e($companyName); ?>">
+                </label>
+                <label>From email address
+                    <input type="email" name="mail_from_address" value="<?= e($mailFromAddress); ?>" placeholder="hello@yourdomain.com" required>
+                </label>
+                <label>Email transport
+                    <select name="mail_transport">
+                        <option value="mail"<?= $mailTransport === 'mail' ? ' selected' : ''; ?>>Built-in PHP mail</option>
+                        <option value="smtp"<?= $mailTransport === 'smtp' ? ' selected' : ''; ?>>SMTP (Microsoft 365, Gmail, etc.)</option>
+                    </select>
+                </label>
+                <label>SMTP host
+                    <input type="text" name="smtp_host" value="<?= e($smtpHost); ?>" placeholder="smtp.office365.com">
+                    <span class="hint">For Microsoft 365 use <code>smtp.office365.com</code>.</span>
+                </label>
+                <label>SMTP port
+                    <input type="text" name="smtp_port" value="<?= e($smtpPort); ?>" placeholder="587">
+                </label>
+                <label>SMTP username
+                    <input type="text" name="smtp_username" value="<?= e($smtpUsername); ?>" placeholder="you@yourdomain.com">
+                </label>
+                <label>SMTP encryption
+                    <select name="smtp_encryption">
+                        <option value="tls"<?= $smtpEncryption === 'tls' ? ' selected' : ''; ?>>TLS</option>
+                        <option value="ssl"<?= $smtpEncryption === 'ssl' ? ' selected' : ''; ?>>SSL</option>
+                        <option value="none"<?= $smtpEncryption === 'none' ? ' selected' : ''; ?>>None</option>
+                    </select>
+                </label>
+                <label>SMTP password / app password
+                    <input type="password" name="smtp_password" placeholder="Microsoft 365 app password" autocomplete="new-password">
+                    <span class="hint">Generate an app password from Microsoft 365 security settings. Leave blank to keep the current password.</span>
+                </label>
+                <?php if ($smtpPasswordStored): ?>
+                    <label class="checkbox-inline">
+                        <input type="checkbox" name="clear_smtp_password" value="1"> Reset stored password
+                    </label>
+                <?php endif; ?>
             </div>
             <div class="form-actions">
                 <button type="submit" class="button button--primary">Save settings</button>

@@ -30,6 +30,7 @@ if ($context === 'admin') {
 }
 $viewInput = strtolower((string) ($viewSource ?? ($segments[0] ?? 'overview')));
 $view = preg_replace('/[^a-z\-]+/', '', $viewInput) ?: 'overview';
+$serviceSlug = null;
 $isAdminRoute = ($context === 'admin');
 if ($isAdminRoute) {
     $_GET['admin_view'] = $view;
@@ -50,6 +51,19 @@ if ($view === 'tickets') {
     } elseif ($resourceId > 0) {
         $view = 'ticket';
         $ticketDetailId = $resourceId;
+    }
+}
+
+if ($view === 'services') {
+    $requestedSlug = $resourceSegment ? strtolower(preg_replace('/[^a-z\-]/', '', $resourceSegment)) : '';
+    if ($requestedSlug === '' && isset($_GET['focus'])) {
+        $requestedSlug = strtolower(preg_replace('/[^a-z\-]/', '', (string) $_GET['focus']));
+    }
+
+    $validServiceSlugs = ['malware-removal', 'care-plans', 'support'];
+    if ($requestedSlug && in_array($requestedSlug, $validServiceSlugs, true)) {
+        $serviceSlug = $requestedSlug;
+        $view = 'service';
     }
 }
 
@@ -172,6 +186,15 @@ if (is_post()) {
                 $clearLogo = isset($_POST['clear_logo']) && $_POST['clear_logo'] === '1';
                 $currentLogo = get_setting('brand_logo_url', '');
                 $logoPath = $clearLogo ? '' : $logoInput;
+                $mailFromName = trim($_POST['mail_from_name'] ?? $companyName);
+                $mailFromAddress = trim($_POST['mail_from_address'] ?? '');
+                $mailTransport = strtolower(trim($_POST['mail_transport'] ?? 'mail'));
+                $smtpHost = trim($_POST['smtp_host'] ?? '');
+                $smtpPort = trim($_POST['smtp_port'] ?? '587');
+                $smtpUsername = trim($_POST['smtp_username'] ?? '');
+                $smtpEncryption = strtolower(trim($_POST['smtp_encryption'] ?? 'tls'));
+                $smtpPassword = $_POST['smtp_password'] ?? null;
+                $clearSmtpPassword = isset($_POST['clear_smtp_password']) && $_POST['clear_smtp_password'] === '1';
 
                 if (!empty($_FILES['brand_logo_file']) && ($_FILES['brand_logo_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
                     $file = $_FILES['brand_logo_file'];
@@ -224,6 +247,24 @@ if (is_post()) {
                     }
                 }
 
+                if ($mailFromAddress === '') {
+                    throw new RuntimeException('A from email address is required for outbound mail.');
+                }
+
+                if (!filter_var($mailFromAddress, FILTER_VALIDATE_EMAIL)) {
+                    throw new RuntimeException('Provide a valid from email address.');
+                }
+
+                $validTransports = ['mail', 'smtp'];
+                if (!in_array($mailTransport, $validTransports, true)) {
+                    $mailTransport = 'mail';
+                }
+
+                $validEncryption = ['none', 'ssl', 'tls'];
+                if (!in_array($smtpEncryption, $validEncryption, true)) {
+                    $smtpEncryption = 'tls';
+                }
+
                 $settings = [
                     'company_name' => $companyName !== '' ? $companyName : 'Service Portal',
                     'brand_logo_url' => $logoPath,
@@ -236,12 +277,26 @@ if (is_post()) {
                     'brand_border_color' => $borderColor !== '' ? $borderColor : '#dce1eb',
                     'brand_text_color' => $textColor !== '' ? $textColor : '#111827',
                     'brand_muted_color' => $mutedColor !== '' ? $mutedColor : '#6b7280',
+                    'mail_from_name' => $mailFromName !== '' ? $mailFromName : $companyName,
+                    'mail_from_address' => $mailFromAddress,
+                    'mail_transport' => $mailTransport,
+                    'smtp_host' => $smtpHost,
+                    'smtp_port' => $smtpPort === '' ? '587' : $smtpPort,
+                    'smtp_username' => $smtpUsername,
+                    'smtp_encryption' => $smtpEncryption,
                 ];
 
                 foreach ($settings as $key => $value) {
                     set_setting($key, $value);
                 }
-                flash('success', 'Brand settings updated.');
+
+                if ($clearSmtpPassword) {
+                    set_setting('smtp_password', '');
+                } elseif ($smtpPassword !== null && $smtpPassword !== '') {
+                    set_setting('smtp_password', $smtpPassword);
+                }
+
+                flash('success', 'Settings updated successfully.');
                 break;
             case 'save_template':
                 require_login('admin');
@@ -984,13 +1039,7 @@ foreach ($messagesStmt->fetchAll() as $message) {
     $messagesByTicket[$message['ticket_id']][] = $message;
 }
 
-$serviceFocus = strtolower(preg_replace('/[^a-z\-]/', '', $_GET['focus'] ?? ''));
-$validServiceFocus = ['malware-removal', 'care-plans', 'support'];
-if (!in_array($serviceFocus, $validServiceFocus, true)) {
-    $serviceFocus = 'malware-removal';
-}
-
-$clientViews = ['overview', 'notifications', 'services', 'forms', 'orders', 'invoices', 'tickets', 'ticket'];
+$clientViews = ['overview', 'notifications', 'services', 'service', 'forms', 'orders', 'invoices', 'tickets', 'ticket'];
 if (!in_array($view, $clientViews, true)) {
     $view = 'overview';
 }
@@ -1024,9 +1073,9 @@ $clientSidebar = [
     ['key' => 'orders', 'label' => 'Orders', 'href' => url_for('dashboard/orders')],
     ['key' => 'tickets', 'label' => 'Support', 'href' => url_for('dashboard/tickets')],
     ['type' => 'group', 'label' => 'Services'],
-    ['key' => 'service-malware-removal', 'label' => 'Malware removal', 'href' => url_for('dashboard/services?focus=malware-removal')],
-    ['key' => 'service-care-plans', 'label' => 'WordPress care plans', 'href' => url_for('dashboard/services?focus=care-plans')],
-    ['key' => 'service-support', 'label' => 'WordPress support', 'href' => url_for('dashboard/services?focus=support')],
+    ['key' => 'service-malware-removal', 'label' => 'Malware removal', 'href' => url_for('dashboard/services/malware-removal')],
+    ['key' => 'service-care-plans', 'label' => 'WordPress care plans', 'href' => url_for('dashboard/services/care-plans')],
+    ['key' => 'service-support', 'label' => 'WordPress support', 'href' => url_for('dashboard/services/support')],
     ['type' => 'group', 'label' => 'Billing'],
     ['key' => 'invoices', 'label' => 'Invoices', 'href' => url_for('dashboard/invoices')],
 ];
@@ -1034,6 +1083,7 @@ $clientSidebar = [
 $pageTitleMap = [
     'overview' => 'Dashboard',
     'services' => 'Services',
+    'service' => 'Services',
     'forms' => 'Forms',
     'orders' => 'Orders',
     'notifications' => 'Notifications',
@@ -1050,10 +1100,13 @@ if ($view === 'ticket') {
 }
 
 $activeKey = $view === 'ticket' ? 'tickets' : $view;
-if ($view === 'services') {
-    $activeKey = 'service-' . $serviceFocus;
+if ($view === 'service' && $serviceSlug) {
+    $activeKey = 'service-' . $serviceSlug;
 }
+$serviceSlug = $serviceSlug ?? 'malware-removal';
 $clientView = $view;
-$searchAction = $view === 'overview' ? url_for('dashboard') : url_for('dashboard/' . ($view === 'ticket' ? 'tickets' : $view));
+$searchAction = $view === 'overview'
+    ? url_for('dashboard')
+    : url_for('dashboard/' . ($view === 'ticket' ? 'tickets' : ($view === 'service' ? 'services' : $view)));
 
 include __DIR__ . '/templates/client/layout.php';

@@ -1033,6 +1033,75 @@ label {
   gap: 32px;
 }
 
+.service-list {
+  display: grid;
+  gap: 24px;
+}
+
+@media (min-width: 900px) {
+  .service-list {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+}
+
+.service-card {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: 0 5px 25px rgb(8 13 26 / 5%);
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  gap: 20px;
+}
+
+.service-card__body h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.service-card__body p {
+  margin: 10px 0 12px;
+  color: var(--muted);
+}
+
+.service-card__body ul {
+  margin: 0;
+  padding: 0 0 0 20px;
+  color: var(--text);
+  display: grid;
+  gap: 6px;
+}
+
+.service-card__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.service-card__payments {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.breadcrumb-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-decoration: none;
+  margin-bottom: 6px;
+}
+
+.breadcrumb-link:hover {
+  color: var(--text);
+}
+
 .service-checkout {
   border: 1px solid var(--border);
   border-radius: 18px;
@@ -1623,6 +1692,29 @@ label {
   margin-top: 6px;
   color: var(--muted);
   font-size: 0.75rem;
+}
+
+.settings-divider {
+  border: 0;
+  height: 1px;
+  background: var(--border);
+  margin: 24px 0 16px;
+}
+
+.settings-subheading {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--text);
+  margin-top: 8px;
 }
 
 .toggle {

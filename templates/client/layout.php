@@ -13,6 +13,9 @@ switch ($view) {
     case 'services':
         include __DIR__ . '/pages/services.php';
         break;
+    case 'service':
+        include __DIR__ . '/pages/service_detail.php';
+        break;
     case 'forms':
         include __DIR__ . '/pages/forms.php';
         break;

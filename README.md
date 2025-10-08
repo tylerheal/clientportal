@@ -52,9 +52,17 @@ Mark invoices as paid from the admin **Orders** table; doing so triggers the pay
 
 ## Notifications & email
 
-- Outbound emails use PHP's `mail()` function. When delivery fails (e.g., on local machines), the payload is logged to `data/mail.log` so nothing is lost.
+- Outbound email can now use either PHP's `mail()` transport or authenticated SMTP. Configure the sender name, address, and SMTP credentials from **Admin → Settings → Email delivery**. When delivery fails (for example on a local machine without an SMTP relay) the payload is logged to `data/mail.log` so nothing is lost.
+- To connect Microsoft 365, create an app password under **My Account → Security → Additional security verification**, then enter:
+  - **Transport:** SMTP
+  - **Host:** `smtp.office365.com`
+  - **Port:** `587`
+  - **Encryption:** TLS
+  - **Username:** Your Microsoft 365 mailbox address
+  - **Password:** The generated app password (leave the field blank later to keep it stored, or tick “Reset stored password” to clear it).
 - In-app notifications surface via the bell icon in the top bar. Clicking **Clear** (or the bell button) marks alerts as read.
 - Email templates live in the **Automations** section. You can add new templates or remove the defaults (order confirmation, ticket reply, payment success, invoice overdue).
+- To verify email delivery end-to-end: submit a new service order from the client portal, capture payment (or mark it paid from the admin orders table), reply to a support ticket, and confirm that each stage emails both the client and administrators while logging the corresponding invoices.
 
 ## Styling & assets
 

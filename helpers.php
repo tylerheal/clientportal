@@ -733,22 +733,83 @@ function mark_notifications_read(PDO $pdo, int $userId): void
 function send_notification_email(string $to, string $subject, string $body): void
 {
     $config = require __DIR__ . '/config.php';
-    $from = $config['mail'];
+    $defaults = $config['mail'];
+    $fromName = get_setting('mail_from_name', $defaults['from_name']);
+    $fromAddress = get_setting('mail_from_address', $defaults['from_address']);
+    $transport = strtolower((string) get_setting('mail_transport', 'mail'));
+
+    $logFailure = static function (?\Throwable $error = null) use ($to, $subject, $body): void {
+        $logDir = __DIR__ . '/data';
+        if (!is_dir($logDir)) {
+            mkdir($logDir, 0775, true);
+        }
+        $entry = sprintf(
+            "[%s] %s | %s\n%s\n",
+            (new \DateTimeImmutable())->format('c'),
+            $to,
+            $subject,
+            $body
+        );
+        if ($error) {
+            $entry .= 'Error: ' . $error->getMessage() . "\n";
+        }
+        file_put_contents($logDir . '/mail.log', $entry . "\n", FILE_APPEND);
+    };
+
+    if ($transport === 'smtp') {
+        $host = trim((string) get_setting('smtp_host', ''));
+        $port = (int) get_setting('smtp_port', '587');
+        $username = trim((string) get_setting('smtp_username', ''));
+        $password = get_setting('smtp_password', '');
+        $encryption = strtolower((string) get_setting('smtp_encryption', 'tls'));
+
+        if ($host !== '' && $username !== '' && $password !== '') {
+            try {
+                if (!class_exists('PHPMailer\\PHPMailer\\PHPMailer')) {
+                    require_once __DIR__ . '/lib/PHPMailer/Exception.php';
+                    require_once __DIR__ . '/lib/PHPMailer/PHPMailer.php';
+                    require_once __DIR__ . '/lib/PHPMailer/SMTP.php';
+                }
+
+                $mailer = new PHPMailer\PHPMailer\PHPMailer(true);
+                $mailer->CharSet = 'UTF-8';
+                $mailer->Encoding = 'base64';
+                $mailer->isSMTP();
+                $mailer->Host = $host;
+                $mailer->Port = $port ?: 587;
+                $mailer->SMTPAuth = true;
+                $mailer->Username = $username;
+                $mailer->Password = $password;
+                if ($encryption === 'ssl') {
+                    $mailer->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+                } elseif ($encryption === 'tls') {
+                    $mailer->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+                } else {
+                    $mailer->SMTPSecure = false;
+                }
+                $mailer->setFrom($fromAddress, $fromName);
+                $mailer->addAddress($to);
+                $mailer->Subject = $subject;
+                $mailer->Body = $body;
+                $mailer->AltBody = $body;
+                $mailer->send();
+                return;
+            } catch (\Throwable $smtpError) {
+                $logFailure($smtpError);
+            }
+        }
+    }
+
     $headers = [
-        'From: ' . $from['from_name'] . ' <' . $from['from_address'] . '>',
-        'Reply-To: ' . ($from['from_address']),
+        'From: ' . $fromName . ' <' . $fromAddress . '>',
+        'Reply-To: ' . $fromAddress,
         'Content-Type: text/plain; charset=UTF-8'
     ];
 
     $success = @mail($to, $subject, $body, implode("\r\n", $headers));
 
     if (!$success) {
-        $logDir = __DIR__ . '/data';
-        if (!is_dir($logDir)) {
-            mkdir($logDir, 0775, true);
-        }
-        $entry = sprintf("[%s] %s | %s\n%s\n\n", (new \DateTimeImmutable())->format('c'), $to, $subject, $body);
-        file_put_contents($logDir . '/mail.log', $entry, FILE_APPEND);
+        $logFailure();
     }
 }
 
