@@ -874,6 +874,72 @@ function process_subscription_cycle(PDO $pdo, array $subscription, \DateTimeImmu
 }
 
 /**
+ * Ensure a subscription row exists for a recurring invoice/order combination.
+ */
+function ensure_subscription_record(PDO $pdo, array $invoice): ?int
+{
+    $subscriptionId = (int) ($invoice['subscription_id'] ?? 0);
+    if ($subscriptionId > 0) {
+        return $subscriptionId;
+    }
+
+    $orderId = (int) ($invoice['order_id'] ?? 0);
+    $serviceId = (int) ($invoice['service_id'] ?? 0);
+    $userId = (int) ($invoice['user_id'] ?? 0);
+    if ($orderId <= 0 || $serviceId <= 0 || $userId <= 0) {
+        return null;
+    }
+
+    $existingStmt = $pdo->prepare('SELECT id FROM subscriptions WHERE order_id = :order LIMIT 1');
+    $existingStmt->execute(['order' => $orderId]);
+    $existingId = (int) $existingStmt->fetchColumn();
+    if ($existingId > 0) {
+        $pdo->prepare('UPDATE invoices SET subscription_id = :subscription WHERE id = :invoice')
+            ->execute([
+                'subscription' => $existingId,
+                'invoice' => (int) ($invoice['id'] ?? 0),
+            ]);
+
+        return $existingId;
+    }
+
+    $serviceStmt = $pdo->prepare('SELECT billing_interval FROM services WHERE id = :id LIMIT 1');
+    $serviceStmt->execute(['id' => $serviceId]);
+    $billingInterval = strtolower((string) $serviceStmt->fetchColumn());
+    if (!in_array($billingInterval, ['monthly', 'annual'], true)) {
+        return null;
+    }
+
+    $now = new \DateTimeImmutable();
+    $intervalSpec = $billingInterval === 'annual' ? '+1 year' : '+1 month';
+    $nextBilling = $now->modify($intervalSpec);
+
+    $pdo->prepare('INSERT INTO subscriptions (order_id, user_id, service_id, interval, next_billing_at, status, created_at, updated_at) VALUES (:order_id, :user_id, :service_id, :interval, :next_billing_at, :status, :created_at, :updated_at)')
+        ->execute([
+            'order_id' => $orderId,
+            'user_id' => $userId,
+            'service_id' => $serviceId,
+            'interval' => $billingInterval,
+            'next_billing_at' => $nextBilling->format(\DateTimeInterface::ATOM),
+            'status' => 'active',
+            'created_at' => $now->format(\DateTimeInterface::ATOM),
+            'updated_at' => $now->format(\DateTimeInterface::ATOM),
+        ]);
+
+    $newSubscriptionId = (int) $pdo->lastInsertId();
+    if ($newSubscriptionId > 0) {
+        $pdo->prepare('UPDATE invoices SET subscription_id = :subscription WHERE id = :invoice')
+            ->execute([
+                'subscription' => $newSubscriptionId,
+                'invoice' => (int) ($invoice['id'] ?? 0),
+            ]);
+        return $newSubscriptionId;
+    }
+
+    return null;
+}
+
+/**
  * Force a subscription renewal cycle immediately.
  */
 function trigger_subscription_cycle(PDO $pdo, int $subscriptionId, bool $force = false): array
@@ -896,6 +962,14 @@ function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, st
     $orderId = (int) ($invoice['order_id'] ?? 0);
     $userId = (int) ($invoice['user_id'] ?? 0);
     $subscriptionId = (int) ($invoice['subscription_id'] ?? 0);
+
+    if ($subscriptionId <= 0) {
+        $ensuredSubscription = ensure_subscription_record($pdo, $invoice);
+        if ($ensuredSubscription) {
+            $subscriptionId = $ensuredSubscription;
+            $invoice['subscription_id'] = $subscriptionId;
+        }
+    }
     $serviceName = $invoice['service_name'] ?? '';
     $clientName = $invoice['name'] ?? ($invoice['client_name'] ?? '');
     $clientEmail = $invoice['email'] ?? null;
