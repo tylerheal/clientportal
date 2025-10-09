@@ -212,6 +212,9 @@ if (is_post()) {
                 $smtpEncryption = strtolower(trim($_POST['smtp_encryption'] ?? 'tls'));
                 $smtpPassword = $_POST['smtp_password'] ?? null;
                 $clearSmtpPassword = isset($_POST['clear_smtp_password']) && $_POST['clear_smtp_password'] === '1';
+                $sendgridKey = $_POST['sendgrid_api_key'] ?? null;
+                $clearSendgridKey = isset($_POST['clear_sendgrid_api_key']) && $_POST['clear_sendgrid_api_key'] === '1';
+                $sendgridRegion = strtolower(trim($_POST['sendgrid_region'] ?? 'us'));
                 $turnstileEnabledFlag = isset($_POST['turnstile_enabled']) && $_POST['turnstile_enabled'] === '1';
                 $turnstileSiteKey = trim($_POST['turnstile_site_key'] ?? '');
                 $turnstileSecret = $_POST['turnstile_secret_key'] ?? null;
@@ -286,14 +289,29 @@ if (is_post()) {
                     }
                 }
 
-                $validTransports = ['mail', 'smtp'];
+                $validTransports = ['mail', 'smtp', 'sendgrid'];
                 if (!in_array($mailTransport, $validTransports, true)) {
                     $mailTransport = 'mail';
+                }
+
+                if ($mailTransport === 'sendgrid') {
+                    $sendgridCandidate = $sendgridKey !== null && trim($sendgridKey) !== ''
+                        ? trim($sendgridKey)
+                        : trim((string) get_setting('sendgrid_api_key', ''));
+
+                    if ($sendgridCandidate === '') {
+                        throw new RuntimeException('Enter a valid SendGrid API key to use the SendGrid transport.');
+                    }
                 }
 
                 $validEncryption = ['none', 'ssl', 'tls'];
                 if (!in_array($smtpEncryption, $validEncryption, true)) {
                     $smtpEncryption = 'tls';
+                }
+
+                $validSendgridRegions = ['us', 'eu'];
+                if (!in_array($sendgridRegion, $validSendgridRegions, true)) {
+                    $sendgridRegion = 'us';
                 }
 
                 $settings = [
@@ -315,6 +333,7 @@ if (is_post()) {
                     'smtp_port' => $smtpPort === '' ? '587' : $smtpPort,
                     'smtp_username' => $smtpUsername,
                     'smtp_encryption' => $smtpEncryption,
+                    'sendgrid_region' => $sendgridRegion,
                     'turnstile_enabled' => $turnstileEnabledFlag ? '1' : '0',
                     'turnstile_site_key' => $turnstileSiteKey,
                 ];
@@ -333,6 +352,12 @@ if (is_post()) {
                     set_setting('turnstile_secret_key', '');
                 } elseif ($turnstileSecret !== null && trim($turnstileSecret) !== '') {
                     set_setting('turnstile_secret_key', trim($turnstileSecret));
+                }
+
+                if ($clearSendgridKey) {
+                    set_setting('sendgrid_api_key', '');
+                } elseif ($sendgridKey !== null && trim($sendgridKey) !== '') {
+                    set_setting('sendgrid_api_key', trim($sendgridKey));
                 }
 
                 flash('success', 'Settings updated successfully.');

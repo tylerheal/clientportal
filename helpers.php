@@ -1602,6 +1602,65 @@ function send_notification_email(string $to, string $subject, string $body): voi
         file_put_contents($logDir . '/mail.log', $entry . "\n", FILE_APPEND);
     };
 
+    if ($transport === 'sendgrid') {
+        $apiKey = trim((string) get_setting('sendgrid_api_key', ''));
+        $region = strtolower((string) get_setting('sendgrid_region', 'us'));
+        $endpoint = $region === 'eu' ? 'https://api.eu.sendgrid.com/v3/mail/send' : 'https://api.sendgrid.com/v3/mail/send';
+
+        if ($apiKey !== '') {
+            try {
+                $payload = [
+                    'personalizations' => [[
+                        'to' => [[
+                            'email' => $to,
+                        ]],
+                    ]],
+                    'from' => [
+                        'email' => $fromAddress,
+                        'name' => $fromName,
+                    ],
+                    'subject' => $subject,
+                    'content' => [[
+                        'type' => 'text/plain',
+                        'value' => $body,
+                    ]],
+                ];
+
+                $ch = curl_init($endpoint);
+                if ($ch === false) {
+                    throw new RuntimeException('Unable to initialise SendGrid request.');
+                }
+
+                curl_setopt_array($ch, [
+                    CURLOPT_POST => true,
+                    CURLOPT_HTTPHEADER => [
+                        'Authorization: Bearer ' . $apiKey,
+                        'Content-Type: application/json',
+                    ],
+                    CURLOPT_POSTFIELDS => json_encode($payload, JSON_THROW_ON_ERROR),
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_TIMEOUT => 10,
+                ]);
+
+                $responseBody = curl_exec($ch);
+                $curlError = curl_errno($ch);
+                $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                if ($curlError === 0 && $httpCode >= 200 && $httpCode < 300) {
+                    curl_close($ch);
+                    return;
+                }
+
+                $errorMessage = $curlError !== 0
+                    ? curl_error($ch)
+                    : ('SendGrid API responded with HTTP ' . $httpCode . ($responseBody ? ': ' . $responseBody : ''));
+                curl_close($ch);
+                throw new RuntimeException($errorMessage);
+            } catch (Throwable $sendgridError) {
+                $logFailure($sendgridError);
+            }
+        }
+    }
+
     if ($transport === 'smtp') {
         $host = trim((string) get_setting('smtp_host', ''));
         $port = (int) get_setting('smtp_port', '587');

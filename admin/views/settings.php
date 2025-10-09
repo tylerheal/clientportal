@@ -20,6 +20,8 @@ $smtpPort = get_setting('smtp_port', '587');
 $smtpUsername = get_setting('smtp_username', '');
 $smtpEncryption = get_setting('smtp_encryption', 'tls');
 $smtpPasswordStored = get_setting('smtp_password', '') !== '';
+$sendgridKeyStored = get_setting('sendgrid_api_key', '') !== '';
+$sendgridRegion = get_setting('sendgrid_region', 'us');
 $turnstileEnabled = turnstile_enabled();
 $turnstileSiteKey = get_setting('turnstile_site_key', '');
 $turnstileSecretStored = get_setting('turnstile_secret_key', '') !== '';
@@ -110,7 +112,24 @@ $turnstileSecretStored = get_setting('turnstile_secret_key', '') !== '';
                     <select name="mail_transport">
                         <option value="mail"<?= $mailTransport === 'mail' ? ' selected' : ''; ?>>Built-in PHP mail</option>
                         <option value="smtp"<?= $mailTransport === 'smtp' ? ' selected' : ''; ?>>SMTP (Microsoft 365, Gmail, etc.)</option>
+                        <option value="sendgrid"<?= $mailTransport === 'sendgrid' ? ' selected' : ''; ?>>SendGrid API</option>
                     </select>
+                </label>
+                <label>SendGrid API key
+                    <input type="password" name="sendgrid_api_key" placeholder="SG.xxxxx" autocomplete="new-password">
+                    <span class="hint">Paste your SendGrid API key. Leave blank to keep the stored key.</span>
+                </label>
+                <?php if ($sendgridKeyStored): ?>
+                    <label class="checkbox-inline">
+                        <input type="checkbox" name="clear_sendgrid_api_key" value="1"> Reset stored SendGrid key
+                    </label>
+                <?php endif; ?>
+                <label>SendGrid region
+                    <select name="sendgrid_region">
+                        <option value="us"<?= $sendgridRegion === 'us' ? ' selected' : ''; ?>>United States (default)</option>
+                        <option value="eu"<?= $sendgridRegion === 'eu' ? ' selected' : ''; ?>>European Union</option>
+                    </select>
+                    <span class="hint">Choose EU if your SendGrid account is hosted in the EU region.</span>
                 </label>
                 <label>SMTP host
                     <input type="text" name="smtp_host" value="<?= e($smtpHost); ?>" placeholder="smtp.office365.com">
