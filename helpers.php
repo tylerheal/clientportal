@@ -1074,6 +1074,8 @@ function finalize_stripe_checkout_session(PDO $pdo, array $invoice, string $sess
         'expand[]' => 'subscription',
     ]);
 
+    $sessionIdentifier = (string) ($session['id'] ?? '');
+
     if (strtolower((string) ($session['mode'] ?? '')) !== 'subscription') {
         throw new RuntimeException('Stripe session is not a subscription checkout.');
     }
@@ -1111,6 +1113,8 @@ function finalize_stripe_checkout_session(PDO $pdo, array $invoice, string $sess
         $latestInvoice = [];
     }
 
+    $latestInvoiceId = (string) ($latestInvoice['id'] ?? '');
+
     $intent = $latestInvoice['payment_intent'] ?? ($session['payment_intent'] ?? null);
     if (is_string($intent) && $intent !== '') {
         $intent = stripe_api_request('GET', 'v1/payment_intents/' . urlencode($intent));
@@ -1121,10 +1125,25 @@ function finalize_stripe_checkout_session(PDO $pdo, array $invoice, string $sess
 
     $intentId = (string) ($intent['id'] ?? '');
     if ($intentId === '') {
-        throw new RuntimeException('Stripe did not return a payment intent for the checkout session.');
+        if ($latestInvoiceId !== '') {
+            $intentId = 'stripe-invoice:' . $latestInvoiceId;
+        } elseif ($sessionIdentifier !== '') {
+            $intentId = 'stripe-session:' . $sessionIdentifier;
+        }
+        if ($intentId === '') {
+            throw new RuntimeException('Stripe did not return a payment intent for the checkout session.');
+        }
     }
 
     $paymentMethodId = (string) ($intent['payment_method'] ?? ($intent['latest_charge']['payment_method'] ?? ''));
+    if ($paymentMethodId === '') {
+        $defaultPaymentMethod = $subscription['default_payment_method'] ?? ($latestInvoice['default_payment_method'] ?? null);
+        if (is_string($defaultPaymentMethod) && $defaultPaymentMethod !== '') {
+            $paymentMethodId = $defaultPaymentMethod;
+        } elseif (is_array($defaultPaymentMethod)) {
+            $paymentMethodId = (string) ($defaultPaymentMethod['id'] ?? '');
+        }
+    }
 
     $metadata = [
         'stripe_customer' => $customerId,
