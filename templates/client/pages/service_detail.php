@@ -91,6 +91,10 @@ $paymentOptions['manual'] = [
     'icon' => '📄',
 ];
 
+if ($serviceSlug === 'care-plans' && isset($paymentOptions['google_pay'])) {
+    unset($paymentOptions['google_pay']);
+}
+
 $defaultName = $user['name'] ?? '';
 $defaultEmail = $user['email'] ?? '';
 $defaultPhone = $user['phone'] ?? '';

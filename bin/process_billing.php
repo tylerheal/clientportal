@@ -31,7 +31,7 @@ foreach ($subs as $subscription) {
             'id' => $subscription['id'],
         ]);
     $invoiceId = (int) $pdo->lastInsertId();
-    $invoiceStmt = $pdo->prepare('SELECT i.*, u.email, u.name, s.name AS service_name, sub.stripe_customer, sub.stripe_payment_method FROM invoices i JOIN users u ON u.id = i.user_id JOIN services s ON s.id = i.service_id LEFT JOIN subscriptions sub ON sub.id = i.subscription_id WHERE i.id = :id LIMIT 1');
+    $invoiceStmt = $pdo->prepare('SELECT i.*, u.email, u.name, s.name AS service_name, sub.stripe_customer, sub.stripe_payment_method, sub.stripe_subscription_id, sub.paypal_subscription_id FROM invoices i JOIN users u ON u.id = i.user_id JOIN services s ON s.id = i.service_id LEFT JOIN subscriptions sub ON sub.id = i.subscription_id WHERE i.id = :id LIMIT 1');
     $invoiceStmt->execute(['id' => $invoiceId]);
     $invoice = $invoiceStmt->fetch();
 
@@ -58,6 +58,10 @@ foreach ($subs as $subscription) {
 
         $stripeCustomer = trim((string) ($invoice['stripe_customer'] ?? ''));
         $stripeMethod = trim((string) ($invoice['stripe_payment_method'] ?? ''));
+        $providerManaged = ($invoice['stripe_subscription_id'] ?? '') !== '' || ($invoice['paypal_subscription_id'] ?? '') !== '';
+        if ($providerManaged) {
+            continue;
+        }
         if ($stripeCustomer !== '' && $stripeMethod !== '' && !empty(payments_available()['stripe'])) {
             $currency = currency_code();
             try {

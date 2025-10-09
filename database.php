@@ -129,6 +129,7 @@ function initialise_schema(PDO $pdo): void
         status TEXT NOT NULL DEFAULT "active",
         stripe_customer TEXT,
         stripe_payment_method TEXT,
+        stripe_subscription_id TEXT,
         paypal_subscription_id TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -258,6 +259,10 @@ function ensure_subscription_payment_columns(PDO $pdo): void
 
     if (!in_array('stripe_payment_method', $names, true)) {
         $pdo->exec('ALTER TABLE subscriptions ADD COLUMN stripe_payment_method TEXT');
+    }
+
+    if (!in_array('stripe_subscription_id', $names, true)) {
+        $pdo->exec('ALTER TABLE subscriptions ADD COLUMN stripe_subscription_id TEXT');
     }
 
     if (!in_array('paypal_subscription_id', $names, true)) {

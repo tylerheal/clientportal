@@ -4,7 +4,7 @@ $currency = currency_code();
 $pageScripts = $pageScripts ?? [];
 if (!empty($availability['paypal'])) {
     $paypalScript = sprintf(
-        'https://www.paypal.com/sdk/js?client-id=%s&currency=%s&components=buttons&intent=capture',
+        'https://www.paypal.com/sdk/js?client-id=%s&currency=%s&components=buttons&intent=capture&vault=true',
         rawurlencode(get_setting('paypal_client_id', '')),
         rawurlencode($currency)
     );
@@ -83,6 +83,8 @@ $paymentReady = !empty($availability['paypal']) || !empty($availability['stripe'
                                         data-invoice-currency="<?= e($currency); ?>"
                                         data-invoice-service="<?= e($invoice['service_name']); ?>"
                                         data-invoice-method="<?= e($method); ?>"
+                                        data-invoice-subscription="<?= (int) ($invoice['subscription_id'] ?? 0); ?>"
+                                        data-invoice-interval="<?= e($invoice['subscription_interval'] ?? ''); ?>"
                                     >Pay now</button>
                                 <?php else: ?>
                                     <span class="badge badge--muted">Awaiting manual payment</span>

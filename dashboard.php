@@ -553,7 +553,7 @@ if (is_post()) {
                     if ($invoiceId <= 0) {
                         throw new RuntimeException('Invalid invoice specified.');
                     }
-                    $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, s.name AS service_name FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id WHERE i.id = :id AND i.user_id = :user LIMIT 1');
+                    $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, s.name AS service_name, sub.interval AS subscription_interval FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id LEFT JOIN subscriptions sub ON sub.id = i.subscription_id WHERE i.id = :id AND i.user_id = :user LIMIT 1');
                     $invoiceStmt->execute(['id' => $invoiceId, 'user' => $user['id']]);
                     $invoice = $invoiceStmt->fetch();
                     if (!$invoice) {
@@ -573,41 +573,57 @@ if (is_post()) {
                     if ($amount <= 0) {
                         throw new RuntimeException('Invoice total must be greater than zero.');
                     }
-                    $value = number_format($amount, 2, '.', '');
                     $currency = currency_code();
-                    $company = get_setting('company_name', 'Service Portal');
-                    $brandName = function_exists('mb_substr') ? mb_substr($company, 0, 120) : substr($company, 0, 120);
-                    $description = sprintf('Invoice #%d – %s', (int) $invoice['id'], $invoice['service_name']);
-                    $payload = [
-                        'intent' => 'CAPTURE',
-                        'purchase_units' => [[
-                            'reference_id' => 'INV-' . (int) $invoice['id'],
-                            'description' => $description,
-                            'amount' => [
-                                'currency_code' => $currency,
-                                'value' => $value,
+                    $subscriptionId = (int) ($invoice['subscription_id'] ?? 0);
+                    if ($subscriptionId > 0) {
+                        $subscriptionStmt = $pdo->prepare('SELECT * FROM subscriptions WHERE id = :id LIMIT 1');
+                        $subscriptionStmt->execute(['id' => $subscriptionId]);
+                        $subscription = $subscriptionStmt->fetch();
+                        if (!$subscription) {
+                            throw new RuntimeException('Subscription details were not found.');
+                        }
+                        $plan = prepare_paypal_subscription_plan($invoice, $subscription);
+                        echo json_encode([
+                            'mode' => 'subscription',
+                            'planID' => $plan['plan_id'],
+                            'customID' => $plan['custom_id'],
+                        ], JSON_THROW_ON_ERROR);
+                    } else {
+                        $value = number_format($amount, 2, '.', '');
+                        $company = get_setting('company_name', 'Service Portal');
+                        $brandName = function_exists('mb_substr') ? mb_substr($company, 0, 120) : substr($company, 0, 120);
+                        $description = sprintf('Invoice #%d – %s', (int) $invoice['id'], $invoice['service_name']);
+                        $payload = [
+                            'intent' => 'CAPTURE',
+                            'purchase_units' => [[
+                                'reference_id' => 'INV-' . (int) $invoice['id'],
+                                'description' => $description,
+                                'amount' => [
+                                    'currency_code' => $currency,
+                                    'value' => $value,
+                                ],
+                            ]],
+                            'application_context' => [
+                                'brand_name' => $brandName,
+                                'landing_page' => 'NO_PREFERENCE',
+                                'shipping_preference' => 'NO_SHIPPING',
+                                'user_action' => 'PAY_NOW',
                             ],
-                        ]],
-                        'application_context' => [
-                            'brand_name' => $brandName,
-                            'landing_page' => 'NO_PREFERENCE',
-                            'shipping_preference' => 'NO_SHIPPING',
-                            'user_action' => 'PAY_NOW',
-                        ],
-                    ];
-                    $response = paypal_api_request('POST', 'v2/checkout/orders', $payload);
-                    $orderId = $response['id'] ?? null;
-                    if (!$orderId) {
-                        throw new RuntimeException('PayPal did not return an order reference.');
+                        ];
+                        $response = paypal_api_request('POST', 'v2/checkout/orders', $payload);
+                        $orderId = $response['id'] ?? null;
+                        if (!$orderId) {
+                            throw new RuntimeException('PayPal did not return an order reference.');
+                        }
+                        $update = $pdo->prepare('UPDATE orders SET payment_reference = :reference, updated_at = :updated WHERE id = :id AND user_id = :user');
+                        $update->execute([
+                            'reference' => $orderId,
+                            'updated' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+                            'id' => $invoice['order_id'],
+                            'user' => $user['id'],
+                        ]);
+                        echo json_encode(['orderID' => $orderId], JSON_THROW_ON_ERROR);
                     }
-                    $update = $pdo->prepare('UPDATE orders SET payment_reference = :reference, updated_at = :updated WHERE id = :id AND user_id = :user');
-                    $update->execute([
-                        'reference' => $orderId,
-                        'updated' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
-                        'id' => $invoice['order_id'],
-                        'user' => $user['id'],
-                    ]);
-                    echo json_encode(['orderID' => $orderId], JSON_THROW_ON_ERROR);
                 } catch (Throwable $e) {
                     http_response_code(400);
                     echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
@@ -622,7 +638,7 @@ if (is_post()) {
                     if ($invoiceId <= 0 || $paypalOrderId === '') {
                         throw new RuntimeException('Payment details were incomplete.');
                     }
-                    $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, s.name AS service_name, u.email, u.name, u.stripe_customer_id AS user_stripe_customer_id FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id JOIN users u ON u.id = i.user_id WHERE i.id = :id AND i.user_id = :user LIMIT 1');
+                    $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, s.name AS service_name, u.email, u.name, u.stripe_customer_id AS user_stripe_customer_id, sub.stripe_subscription_id FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id JOIN users u ON u.id = i.user_id LEFT JOIN subscriptions sub ON sub.id = i.subscription_id WHERE i.id = :id AND i.user_id = :user LIMIT 1');
                     $invoiceStmt->execute(['id' => $invoiceId, 'user' => $user['id']]);
                     $invoice = $invoiceStmt->fetch();
                     if (!$invoice) {
@@ -648,6 +664,60 @@ if (is_post()) {
                     }
                     finalise_invoice_payment($pdo, $invoice, 'paypal', $captureId);
                     echo json_encode(['status' => 'paid', 'capture' => $captureId], JSON_THROW_ON_ERROR);
+                } catch (Throwable $e) {
+                    http_response_code(400);
+                    echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
+                }
+                exit;
+            case 'capture_paypal_subscription':
+                require_login();
+                header('Content-Type: application/json');
+                $invoiceId = (int) ($_POST['invoice_id'] ?? 0);
+                $paypalSubscriptionId = trim($_POST['paypal_subscription_id'] ?? '');
+                try {
+                    if ($invoiceId <= 0 || $paypalSubscriptionId === '') {
+                        throw new RuntimeException('Payment details were incomplete.');
+                    }
+                    if (empty(payments_available()['paypal'])) {
+                        throw new RuntimeException('PayPal payments are not available right now.');
+                    }
+                    $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, s.name AS service_name, u.email, u.name, sub.id AS subscription_id FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id JOIN users u ON u.id = i.user_id LEFT JOIN subscriptions sub ON sub.id = i.subscription_id WHERE i.id = :id AND i.user_id = :user LIMIT 1');
+                    $invoiceStmt->execute(['id' => $invoiceId, 'user' => $user['id']]);
+                    $invoice = $invoiceStmt->fetch();
+                    if (!$invoice) {
+                        throw new RuntimeException('Invoice not found.');
+                    }
+                    if ((int) ($invoice['subscription_id'] ?? 0) === 0) {
+                        throw new RuntimeException('This invoice is not linked to a subscription.');
+                    }
+                    if (($invoice['status'] ?? '') === 'paid' || ($invoice['payment_status'] ?? '') === 'paid') {
+                        throw new RuntimeException('This invoice has already been paid.');
+                    }
+                    $details = paypal_api_request('GET', 'v1/billing/subscriptions/' . urlencode($paypalSubscriptionId));
+                    $status = strtoupper((string) ($details['status'] ?? ''));
+                    if (!in_array($status, ['ACTIVE', 'APPROVAL_PENDING'], true)) {
+                        throw new RuntimeException('PayPal has not activated the subscription yet.');
+                    }
+                    $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+                    $pdo->prepare('UPDATE orders SET payment_reference = :reference, updated_at = :updated WHERE id = :id AND user_id = :user')
+                        ->execute([
+                            'reference' => $paypalSubscriptionId,
+                            'updated' => $now,
+                            'id' => $invoice['order_id'],
+                            'user' => $user['id'],
+                        ]);
+                    if (isset($invoice['subscription_id'])) {
+                        $pdo->prepare('UPDATE subscriptions SET status = :status, updated_at = :updated WHERE id = :id')
+                            ->execute([
+                                'status' => strtolower($status) === 'active' ? 'active' : 'pending',
+                                'updated' => $now,
+                                'id' => $invoice['subscription_id'],
+                            ]);
+                    }
+                    finalise_invoice_payment($pdo, $invoice, 'paypal', $paypalSubscriptionId, (float) $invoice['total'], [
+                        'paypal_subscription_id' => $paypalSubscriptionId,
+                    ]);
+                    echo json_encode(['status' => 'paid', 'subscription' => $paypalSubscriptionId], JSON_THROW_ON_ERROR);
                 } catch (Throwable $e) {
                     http_response_code(400);
                     echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
@@ -689,13 +759,6 @@ if (is_post()) {
                     $currency = currency_code();
                     $description = sprintf('Invoice #%d – %s', (int) $invoice['id'], $invoice['service_name']);
 
-                    $params = [
-                        'amount' => to_minor_units($amount, $currency),
-                        'currency' => strtolower($currency),
-                        'metadata[invoice_id]' => (string) $invoice['id'],
-                        'description' => $description,
-                    ];
-
                     $customerContext = [
                         'id' => (int) $invoice['user_id'],
                         'email' => $invoice['email'],
@@ -703,55 +766,125 @@ if (is_post()) {
                         'stripe_customer_id' => $invoice['user_stripe_customer_id'] ?? '',
                     ];
                     $customerId = ensure_stripe_customer($pdo, $customerContext);
-                    if ($customerId) {
-                        $params['customer'] = $customerId;
-                    }
-
-                    if ($mode === 'google_pay') {
-                        $params['payment_method_types[]'] = 'card';
-                    } else {
-                        $params['automatic_payment_methods[enabled]'] = 'true';
-                        $params['automatic_payment_methods[allow_redirects]'] = 'never';
-                        if ((int) ($invoice['subscription_id'] ?? 0) > 0) {
-                            $params['setup_future_usage'] = 'off_session';
-                        }
-                    }
-
-                    $intent = stripe_api_request('POST', 'v1/payment_intents', $params);
-                    $intentId = $intent['id'] ?? null;
-                    $clientSecret = $intent['client_secret'] ?? null;
-                    if (!$intentId || !$clientSecret) {
-                        throw new RuntimeException('Unable to prepare the Stripe payment.');
-                    }
-
+                    $subscriptionId = (int) ($invoice['subscription_id'] ?? 0);
                     $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
-                    $pdo->prepare('UPDATE orders SET payment_reference = :reference, updated_at = :updated WHERE id = :id AND user_id = :user')
-                        ->execute([
-                            'reference' => $intentId,
-                            'updated' => $now,
-                            'id' => $invoice['order_id'],
-                            'user' => $user['id'],
-                        ]);
 
-                    $pdo->prepare('INSERT INTO payments (invoice_id, provider, reference, amount, status, created_at, updated_at) VALUES (:invoice_id, :provider, :reference, :amount, :status, :created_at, :updated_at)')
-                        ->execute([
-                            'invoice_id' => $invoice['id'],
-                            'provider' => $paymentMethod,
-                            'reference' => $intentId,
+                    if ($subscriptionId > 0) {
+                        if (!$customerId) {
+                            throw new RuntimeException('Unable to prepare the Stripe customer for the subscription.');
+                        }
+                        if ($mode === 'google_pay') {
+                            throw new RuntimeException('Recurring subscriptions must be paid with a saved card.');
+                        }
+                        $subscriptionStmt = $pdo->prepare('SELECT * FROM subscriptions WHERE id = :id LIMIT 1');
+                        $subscriptionStmt->execute(['id' => $subscriptionId]);
+                        $subscription = $subscriptionStmt->fetch();
+                        if (!$subscription) {
+                            throw new RuntimeException('Subscription details were not found.');
+                        }
+                        $intervalUnit = strtolower((string) ($subscription['interval'] ?? 'monthly')) === 'annual' ? 'year' : 'month';
+                        $subscriptionParams = [
+                            'customer' => $customerId,
+                            'items[0][price_data][currency]' => strtolower($currency),
+                            'items[0][price_data][unit_amount]' => to_minor_units($amount, $currency),
+                            'items[0][price_data][product_data][name]' => $invoice['service_name'],
+                            'items[0][price_data][recurring][interval]' => $intervalUnit,
+                            'items[0][price_data][recurring][interval_count]' => 1,
+                            'payment_behavior' => 'default_incomplete',
+                            'metadata[invoice_id]' => (string) $invoice['id'],
+                            'expand[]' => 'latest_invoice.payment_intent',
+                        ];
+                        $subscriptionResponse = stripe_api_request('POST', 'v1/subscriptions', $subscriptionParams);
+                        $stripeSubscriptionId = $subscriptionResponse['id'] ?? '';
+                        $latestInvoice = $subscriptionResponse['latest_invoice'] ?? [];
+                        $intent = $latestInvoice['payment_intent'] ?? [];
+                        $intentId = $intent['id'] ?? null;
+                        $clientSecret = $intent['client_secret'] ?? null;
+                        if (!$intentId || !$clientSecret || $stripeSubscriptionId === '') {
+                            throw new RuntimeException('Unable to prepare the Stripe subscription payment.');
+                        }
+                        $pdo->prepare('UPDATE subscriptions SET stripe_customer = :customer, stripe_subscription_id = :subscription, updated_at = :updated WHERE id = :id')
+                            ->execute([
+                                'customer' => $customerId,
+                                'subscription' => $stripeSubscriptionId,
+                                'updated' => $now,
+                                'id' => $subscriptionId,
+                            ]);
+                        $pdo->prepare('UPDATE orders SET payment_reference = :reference, updated_at = :updated WHERE id = :id AND user_id = :user')
+                            ->execute([
+                                'reference' => $intentId,
+                                'updated' => $now,
+                                'id' => $invoice['order_id'],
+                                'user' => $user['id'],
+                            ]);
+                        $pdo->prepare('INSERT INTO payments (invoice_id, provider, reference, amount, status, created_at, updated_at) VALUES (:invoice_id, :provider, :reference, :amount, :status, :created_at, :updated_at)')
+                            ->execute([
+                                'invoice_id' => $invoice['id'],
+                                'provider' => $paymentMethod,
+                                'reference' => $intentId,
+                                'amount' => $amount,
+                                'status' => 'initiated',
+                                'created_at' => $now,
+                                'updated_at' => $now,
+                            ]);
+                        echo json_encode([
+                            'intent' => $intentId,
+                            'client_secret' => $clientSecret,
+                            'publishable_key' => $availability['stripe_publishable'],
+                            'currency' => $currency,
                             'amount' => $amount,
-                            'status' => 'initiated',
-                            'created_at' => $now,
-                            'updated_at' => $now,
-                        ]);
-
-                    echo json_encode([
-                        'intent' => $intentId,
-                        'client_secret' => $clientSecret,
-                        'publishable_key' => $availability['stripe_publishable'],
-                        'currency' => $currency,
-                        'amount' => $amount,
-                        'payment_method' => $paymentMethod,
-                    ], JSON_THROW_ON_ERROR);
+                            'payment_method' => $paymentMethod,
+                            'mode' => 'subscription',
+                            'subscription' => $stripeSubscriptionId,
+                        ], JSON_THROW_ON_ERROR);
+                    } else {
+                        $params = [
+                            'amount' => to_minor_units($amount, $currency),
+                            'currency' => strtolower($currency),
+                            'metadata[invoice_id]' => (string) $invoice['id'],
+                            'description' => $description,
+                        ];
+                        if ($customerId) {
+                            $params['customer'] = $customerId;
+                        }
+                        if ($mode === 'google_pay') {
+                            $params['payment_method_types[]'] = 'card';
+                        } else {
+                            $params['automatic_payment_methods[enabled]'] = 'true';
+                            $params['automatic_payment_methods[allow_redirects]'] = 'never';
+                        }
+                        $intent = stripe_api_request('POST', 'v1/payment_intents', $params);
+                        $intentId = $intent['id'] ?? null;
+                        $clientSecret = $intent['client_secret'] ?? null;
+                        if (!$intentId || !$clientSecret) {
+                            throw new RuntimeException('Unable to prepare the Stripe payment.');
+                        }
+                        $pdo->prepare('UPDATE orders SET payment_reference = :reference, updated_at = :updated WHERE id = :id AND user_id = :user')
+                            ->execute([
+                                'reference' => $intentId,
+                                'updated' => $now,
+                                'id' => $invoice['order_id'],
+                                'user' => $user['id'],
+                            ]);
+                        $pdo->prepare('INSERT INTO payments (invoice_id, provider, reference, amount, status, created_at, updated_at) VALUES (:invoice_id, :provider, :reference, :amount, :status, :created_at, :updated_at)')
+                            ->execute([
+                                'invoice_id' => $invoice['id'],
+                                'provider' => $paymentMethod,
+                                'reference' => $intentId,
+                                'amount' => $amount,
+                                'status' => 'initiated',
+                                'created_at' => $now,
+                                'updated_at' => $now,
+                            ]);
+                        echo json_encode([
+                            'intent' => $intentId,
+                            'client_secret' => $clientSecret,
+                            'publishable_key' => $availability['stripe_publishable'],
+                            'currency' => $currency,
+                            'amount' => $amount,
+                            'payment_method' => $paymentMethod,
+                        ], JSON_THROW_ON_ERROR);
+                    }
                 } catch (Throwable $e) {
                     http_response_code(400);
                     echo json_encode(['error' => $e->getMessage()], JSON_THROW_ON_ERROR);
@@ -808,6 +941,9 @@ if (is_post()) {
                         $stripeMeta['stripe_payment_method'] = $paymentMethodId;
                     }
 
+                    if ((int) ($invoice['subscription_id'] ?? 0) > 0 && !empty($invoice['stripe_subscription_id'])) {
+                        $stripeMeta['stripe_subscription_id'] = $invoice['stripe_subscription_id'];
+                    }
                     finalise_invoice_payment($pdo, $invoice, $paymentMethod, $intentId, (float) $invoice['total'], $stripeMeta);
                     echo json_encode(['status' => 'paid'], JSON_THROW_ON_ERROR);
                 } catch (Throwable $e) {
@@ -1100,7 +1236,7 @@ $orderStmt = $pdo->prepare('SELECT o.*, s.name AS service_name FROM orders o JOI
 $orderStmt->execute(['user' => $user['id']]);
 $orders = $orderStmt->fetchAll();
 
-$invoiceStmt = $pdo->prepare('SELECT i.*, s.name AS service_name, o.payment_method, o.payment_status FROM invoices i JOIN services s ON s.id = i.service_id LEFT JOIN orders o ON o.id = i.order_id WHERE i.user_id = :user ORDER BY i.created_at DESC');
+$invoiceStmt = $pdo->prepare('SELECT i.*, s.name AS service_name, o.payment_method, o.payment_status, sub.interval AS subscription_interval FROM invoices i JOIN services s ON s.id = i.service_id LEFT JOIN orders o ON o.id = i.order_id LEFT JOIN subscriptions sub ON sub.id = i.subscription_id WHERE i.user_id = :user ORDER BY i.created_at DESC');
 $invoiceStmt->execute(['user' => $user['id']]);
 $invoices = $invoiceStmt->fetchAll();
 

@@ -434,6 +434,22 @@ function paypal_credentials(): array
     return [$clientId, $secret];
 }
 
+class PayPalApiException extends RuntimeException
+{
+    private int $statusCode;
+
+    public function __construct(int $statusCode, string $message)
+    {
+        parent::__construct($message, $statusCode);
+        $this->statusCode = $statusCode;
+    }
+
+    public function getStatusCode(): int
+    {
+        return $this->statusCode;
+    }
+}
+
 function paypal_access_token(bool $forceRefresh = false): string
 {
     static $cache = ['token' => null, 'expires' => 0];
@@ -518,19 +534,103 @@ function paypal_api_request(string $method, string $path, ?array $payload = null
         $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
-        $data = json_decode($response, true);
+        $data = $response !== '' ? json_decode($response, true) : [];
         if ($status === 401 && $attempts === 0) {
             $attempts++;
             continue;
         }
         if ($status >= 400) {
-            $message = $data['message'] ?? $data['details'][0]['description'] ?? $data['error_description'] ?? 'PayPal request failed.';
-            throw new RuntimeException($message);
+            $message = 'PayPal request failed.';
+            if (is_array($data)) {
+                $message = $data['message'] ?? $data['details'][0]['description'] ?? $data['error_description'] ?? $data['error'] ?? $message;
+            }
+            throw new PayPalApiException($status, $message);
+        }
+        if ($data === null) {
+            throw new RuntimeException('Unexpected response from PayPal API.');
         }
         return is_array($data) ? $data : [];
     } while ($attempts < 2);
 
     throw new RuntimeException('PayPal request failed with repeated authentication errors.');
+}
+
+function ensure_paypal_product(string $productId, string $name, string $description): void
+{
+    try {
+        paypal_api_request('GET', 'v1/catalogs/products/' . urlencode($productId));
+        return;
+    } catch (PayPalApiException $e) {
+        if ($e->getStatusCode() !== 404) {
+            throw $e;
+        }
+    }
+
+    paypal_api_request('POST', 'v1/catalogs/products', [
+        'id' => $productId,
+        'name' => $name,
+        'description' => $description,
+        'type' => 'SERVICE',
+        'category' => 'SOFTWARE',
+    ]);
+}
+
+function create_paypal_plan(string $productId, string $name, string $intervalUnit, string $currency, string $amount): string
+{
+    $plan = paypal_api_request('POST', 'v1/billing/plans', [
+        'product_id' => $productId,
+        'name' => $name,
+        'billing_cycles' => [[
+            'frequency' => [
+                'interval_unit' => strtoupper($intervalUnit),
+                'interval_count' => 1,
+            ],
+            'tenure_type' => 'REGULAR',
+            'sequence' => 1,
+            'total_cycles' => 0,
+            'pricing_scheme' => [
+                'fixed_price' => [
+                    'value' => $amount,
+                    'currency_code' => strtoupper($currency),
+                ],
+            ],
+        ]],
+        'payment_preferences' => [
+            'auto_bill_outstanding' => true,
+            'setup_fee_failure_action' => 'CONTINUE',
+            'payment_failure_threshold' => 1,
+        ],
+    ]);
+
+    $planId = $plan['id'] ?? '';
+    if ($planId === '') {
+        throw new RuntimeException('PayPal did not return a plan identifier.');
+    }
+
+    paypal_api_request('POST', 'v1/billing/plans/' . urlencode($planId) . '/activate', []);
+
+    return $planId;
+}
+
+function prepare_paypal_subscription_plan(array $invoice, array $subscription): array
+{
+    $serviceName = $invoice['service_name'] ?? 'Subscription';
+    $subscriptionId = (int) ($subscription['id'] ?? 0);
+    $interval = strtolower((string) ($subscription['interval'] ?? 'monthly'));
+    $amount = number_format((float) ($invoice['total'] ?? 0), 2, '.', '');
+    $currency = currency_code();
+
+    $productId = 'PROD-' . (int) ($invoice['service_id'] ?? 0);
+    ensure_paypal_product($productId, $serviceName, 'Recurring service for ' . $serviceName);
+
+    $unit = $interval === 'annual' ? 'YEAR' : 'MONTH';
+    $planName = $serviceName . ' ' . ($interval === 'annual' ? 'Annual' : 'Monthly');
+    $planId = create_paypal_plan($productId, $planName, $unit, $currency, $amount);
+
+    return [
+        'plan_id' => $planId,
+        'custom_id' => $subscriptionId > 0 ? 'SUB-' . $subscriptionId : null,
+    ];
 }
 
 function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, string $reference, ?float $amount = null, array $metadata = []): void
@@ -605,6 +705,10 @@ function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, st
             }
             if ($stripeMethod !== '') {
                 $updates['stripe_payment_method'] = $stripeMethod;
+            }
+            $stripeSubscriptionRef = trim((string) ($metadata['stripe_subscription_id'] ?? ''));
+            if ($stripeSubscriptionRef !== '') {
+                $updates['stripe_subscription_id'] = $stripeSubscriptionRef;
             }
         } elseif ($provider === 'paypal') {
             $paypalSubscription = trim((string) ($metadata['paypal_subscription_id'] ?? ''));

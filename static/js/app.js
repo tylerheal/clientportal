@@ -475,6 +475,7 @@
             requestButton: null,
             clientSecret: null,
             intentId: null,
+            subscriptionId: null,
         };
 
         const formatMoney = (amount, currency) => {
@@ -536,6 +537,7 @@
             stripeState.request = null;
             stripeState.clientSecret = null;
             stripeState.intentId = null;
+            stripeState.subscriptionId = null;
             if (stripeFeedback) {
                 stripeFeedback.textContent = '';
             }
@@ -704,7 +706,9 @@
                 providerEl.textContent = 'PayPal';
             }
             if (paymentIntro) {
-                paymentIntro.textContent = 'We’ll redirect you after PayPal confirms the payment.';
+                paymentIntro.textContent = details.isSubscription
+                    ? 'Approve the subscription in PayPal to start recurring billing.'
+                    : 'We’ll redirect you after PayPal confirms the payment.';
             }
             if (!paypalContainer) {
                 return;
@@ -716,9 +720,70 @@
             }
             waitForPayPal()
                 .then((paypal) => {
-                    paypalButtons = paypal.Buttons({
+                    const buttonConfig = {
                         style: { layout: 'vertical' },
-                        createOrder: () => {
+                        onCancel: () => {
+                            if (feedbackEl) {
+                                feedbackEl.textContent = 'Payment was cancelled before completion.';
+                            }
+                        },
+                        onError: (error) => {
+                            if (feedbackEl) {
+                                feedbackEl.textContent = error.message || 'PayPal encountered an issue.';
+                            }
+                        },
+                    };
+
+                    if (details.isSubscription) {
+                        buttonConfig.createSubscription = (data, actions) => {
+                            if (feedbackEl) {
+                                feedbackEl.textContent = 'Preparing subscription…';
+                            }
+                            return sendAction(actionEndpoint, 'create_paypal_order', { invoice_id: details.id })
+                                .then((payload) => {
+                                    if (!payload.planID) {
+                                        const message = payload.error || 'Unable to prepare the PayPal subscription.';
+                                        throw new Error(message);
+                                    }
+                                    const createPayload = { plan_id: payload.planID };
+                                    if (payload.customID) {
+                                        createPayload.custom_id = payload.customID;
+                                    }
+                                    return actions.subscription.create(createPayload);
+                                })
+                                .catch((error) => {
+                                    if (feedbackEl) {
+                                        feedbackEl.textContent = error.message || String(error);
+                                    }
+                                    throw error;
+                                });
+                        };
+                        buttonConfig.onApprove = (data) => {
+                            if (feedbackEl) {
+                                feedbackEl.textContent = 'Activating subscription…';
+                            }
+                            return sendAction(actionEndpoint, 'capture_paypal_subscription', {
+                                invoice_id: details.id,
+                                paypal_subscription_id: data.subscriptionID,
+                            })
+                                .then(() => {
+                                    markInvoicePaid(details.id);
+                                    if (feedbackEl) {
+                                        feedbackEl.textContent = 'Subscription started. Thank you!';
+                                    }
+                                    emitPaid(details.id, details.service);
+                                    window.setTimeout(() => {
+                                        closeInvoiceModal();
+                                    }, 1500);
+                                })
+                                .catch((error) => {
+                                    if (feedbackEl) {
+                                        feedbackEl.textContent = error.message || String(error);
+                                    }
+                                });
+                        };
+                    } else {
+                        buttonConfig.createOrder = () => {
                             if (feedbackEl) {
                                 feedbackEl.textContent = 'Creating PayPal order…';
                             }
@@ -730,8 +795,8 @@
                                     }
                                     throw error;
                                 });
-                        },
-                        onApprove: (data) => {
+                        };
+                        buttonConfig.onApprove = (data) => {
                             if (feedbackEl) {
                                 feedbackEl.textContent = 'Capturing payment…';
                             }
@@ -754,18 +819,10 @@
                                         feedbackEl.textContent = error.message || String(error);
                                     }
                                 });
-                        },
-                        onCancel: () => {
-                            if (feedbackEl) {
-                                feedbackEl.textContent = 'Payment was cancelled before completion.';
-                            }
-                        },
-                        onError: (error) => {
-                            if (feedbackEl) {
-                                feedbackEl.textContent = error.message || 'PayPal encountered an issue.';
-                            }
-                        },
-                    });
+                        };
+                    }
+
+                    paypalButtons = paypal.Buttons(buttonConfig);
                     if (paypalButtons && paypalButtons.isEligible()) {
                         return paypalButtons.render(paypalContainer);
                     }
@@ -782,7 +839,7 @@
             hidePanels();
             resetStripe();
             if (feedbackEl) {
-                feedbackEl.textContent = 'Preparing payment…';
+                feedbackEl.textContent = details.isSubscription ? 'Preparing subscription payment…' : 'Preparing payment…';
             }
             sendAction(actionEndpoint, 'create_stripe_intent', {
                 invoice_id: details.id,
@@ -794,18 +851,31 @@
                         stripeState.clientSecret = payload.client_secret;
                         stripeState.intentId = payload.intent;
                         stripeState.provider = provider;
+                        if (payload.subscription) {
+                            stripeState.subscriptionId = payload.subscription;
+                        } else {
+                            stripeState.subscriptionId = null;
+                        }
                         if (stripeSubmit) {
                             stripeSubmit.textContent = `Pay ${formatMoney(details.amount, details.currency || 'GBP')}`;
                             stripeSubmit.disabled = false;
                         }
                         if (providerEl) {
                             providerEl.hidden = false;
-                            providerEl.textContent = provider === 'google_pay' ? 'Google Pay' : 'Card payment';
+                            if (details.isSubscription) {
+                                providerEl.textContent = 'Card subscription';
+                            } else {
+                                providerEl.textContent = provider === 'google_pay' ? 'Google Pay' : 'Card payment';
+                            }
                         }
                         if (paymentIntro) {
-                            paymentIntro.textContent = provider === 'google_pay'
-                                ? 'Use Google Pay on supported devices or enter your card details below.'
-                                : 'Enter your card details to complete payment.';
+                            if (details.isSubscription) {
+                                paymentIntro.textContent = 'Your card will be saved for future renewals after this payment.';
+                            } else {
+                                paymentIntro.textContent = provider === 'google_pay'
+                                    ? 'Use Google Pay on supported devices or enter your card details below.'
+                                    : 'Enter your card details to complete payment.';
+                            }
                         }
                         if (stripePanel) {
                             stripePanel.hidden = false;
@@ -884,6 +954,9 @@
                 }
                 const merged = { ...details };
                 merged.paymentMethod = merged.paymentMethod || 'paypal';
+                if (typeof merged.subscriptionId === 'number') {
+                    merged.isSubscription = merged.subscriptionId > 0;
+                }
                 openInvoiceModal(merged, options);
             },
             close: () => {
@@ -947,10 +1020,21 @@
                 const currency = trigger.getAttribute('data-invoice-currency') || 'GBP';
                 const service = trigger.getAttribute('data-invoice-service') || 'Invoice';
                 const paymentMethod = (trigger.getAttribute('data-invoice-method') || 'paypal').toLowerCase();
+                const subscriptionId = Number(trigger.getAttribute('data-invoice-subscription') || '0');
+                const subscriptionInterval = trigger.getAttribute('data-invoice-interval') || '';
                 if (!invoiceId || !amount) {
                     return;
                 }
-                paymentsAPI.open({ id: invoiceId, amount, service, currency, paymentMethod });
+                paymentsAPI.open({
+                    id: invoiceId,
+                    amount,
+                    service,
+                    currency,
+                    paymentMethod,
+                    subscriptionId,
+                    subscriptionInterval,
+                    isSubscription: subscriptionId > 0,
+                });
             });
         });
     }
