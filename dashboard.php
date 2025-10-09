@@ -215,6 +215,7 @@ if (is_post()) {
                 $sendgridKey = $_POST['sendgrid_api_key'] ?? null;
                 $clearSendgridKey = isset($_POST['clear_sendgrid_api_key']) && $_POST['clear_sendgrid_api_key'] === '1';
                 $sendgridRegion = strtolower(trim($_POST['sendgrid_region'] ?? 'us'));
+                $envSendgridKey = trim((string) getenv('SENDGRID_API_KEY'));
                 $turnstileEnabledFlag = isset($_POST['turnstile_enabled']) && $_POST['turnstile_enabled'] === '1';
                 $turnstileSiteKey = trim($_POST['turnstile_site_key'] ?? '');
                 $turnstileSecret = $_POST['turnstile_secret_key'] ?? null;
@@ -298,6 +299,10 @@ if (is_post()) {
                     $sendgridCandidate = $sendgridKey !== null && trim($sendgridKey) !== ''
                         ? trim($sendgridKey)
                         : trim((string) get_setting('sendgrid_api_key', ''));
+
+                    if ($sendgridCandidate === '' && $envSendgridKey !== '') {
+                        $sendgridCandidate = $envSendgridKey;
+                    }
 
                     if ($sendgridCandidate === '') {
                         throw new RuntimeException('Enter a valid SendGrid API key to use the SendGrid transport.');
