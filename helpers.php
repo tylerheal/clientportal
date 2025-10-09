@@ -577,6 +577,8 @@ function ensure_paypal_product(string $productId, string $name, string $descript
 
 function create_paypal_plan(string $productId, string $name, string $intervalUnit, string $currency, string $amount): string
 {
+    $currencyCode = strtoupper($currency);
+
     $plan = paypal_api_request('POST', 'v1/billing/plans', [
         'product_id' => $productId,
         'name' => $name,
@@ -591,14 +593,23 @@ function create_paypal_plan(string $productId, string $name, string $intervalUni
             'pricing_scheme' => [
                 'fixed_price' => [
                     'value' => $amount,
-                    'currency_code' => strtoupper($currency),
+                    'currency_code' => $currencyCode,
                 ],
             ],
         ]],
         'payment_preferences' => [
             'auto_bill_outstanding' => true,
+            'setup_fee' => [
+                'value' => '0',
+                'currency_code' => $currencyCode,
+            ],
             'setup_fee_failure_action' => 'CONTINUE',
             'payment_failure_threshold' => 1,
+        ],
+        'quantity_supported' => true,
+        'taxes' => [
+            'percentage' => '0',
+            'inclusive' => false,
         ],
     ]);
 
@@ -609,7 +620,25 @@ function create_paypal_plan(string $productId, string $name, string $intervalUni
 
     paypal_api_request('POST', 'v1/billing/plans/' . urlencode($planId) . '/activate', []);
 
-    return $planId;
+    // PayPal plan activation can take a moment to propagate; poll until it is active.
+    for ($attempt = 0; $attempt < 5; $attempt++) {
+        try {
+            $details = paypal_api_request('GET', 'v1/billing/plans/' . urlencode($planId));
+            $status = strtoupper((string) ($details['status'] ?? ''));
+            if ($status === 'ACTIVE') {
+                return $planId;
+            }
+        } catch (PayPalApiException $exception) {
+            // A short propagation delay can surface as a 404. Retry before giving up.
+            if ($exception->getStatusCode() >= 500) {
+                throw $exception;
+            }
+        }
+
+        usleep(250000); // 0.25 seconds
+    }
+
+    throw new RuntimeException('PayPal plan activation is taking longer than expected. Please retry in a moment.');
 }
 
 function prepare_paypal_subscription_plan(array $invoice, array $subscription): array
