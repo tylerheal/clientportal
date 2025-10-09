@@ -1584,7 +1584,7 @@ function send_notification_email(string $to, string $subject, string $body): boo
     $fromAddress = get_setting('mail_from_address', $defaults['from_address']);
     $transport = strtolower((string) get_setting('mail_transport', 'mail'));
 
-    $logFailure = static function (?\Throwable $error = null) use ($to, $subject, $body): void {
+    $appendMailLog = static function (?string $note, ?\Throwable $error = null) use ($to, $subject, $body): void {
         $logDir = __DIR__ . '/data';
         if (!is_dir($logDir)) {
             mkdir($logDir, 0775, true);
@@ -1596,10 +1596,21 @@ function send_notification_email(string $to, string $subject, string $body): boo
             $subject,
             $body
         );
+        if ($note !== null && $note !== '') {
+            $entry .= 'Note: ' . $note . "\n";
+        }
         if ($error) {
             $entry .= 'Error: ' . $error->getMessage() . "\n";
         }
         file_put_contents($logDir . '/mail.log', $entry . "\n", FILE_APPEND);
+    };
+
+    $logFailure = static function (?\Throwable $error = null, ?string $note = null) use ($appendMailLog): void {
+        $appendMailLog($note, $error);
+    };
+
+    $logDiagnostic = static function (string $note) use ($appendMailLog): void {
+        $appendMailLog($note, null);
     };
 
     if ($transport === 'sendgrid') {
@@ -1616,16 +1627,26 @@ function send_notification_email(string $to, string $subject, string $body): boo
                 $email->addTo($to);
                 $email->addContent('text/plain', $body);
 
-                $options = [];
-                if ($region === 'eu') {
-                    $options['host'] = 'https://api.eu.sendgrid.com';
-                }
+                $normalizeRegion = static function (string $value): string {
+                    $value = strtolower(trim($value));
+                    return $value === 'eu' ? 'eu' : 'global';
+                };
 
-                $sendgrid = new \SendGrid($apiKey, $options);
-                if ($region === 'eu' && method_exists($sendgrid, 'setDataResidency')) {
-                    $sendgrid->setDataResidency('eu');
-                }
+                $resolvedRegion = $normalizeRegion($region);
+                $createClient = static function (string $targetRegion) use ($apiKey): \SendGrid {
+                    $normalized = strtolower($targetRegion) === 'eu' ? 'eu' : 'global';
+                    $options = [];
+                    if ($normalized === 'eu') {
+                        $options['host'] = 'https://api.eu.sendgrid.com';
+                    }
+                    $client = new \SendGrid($apiKey, $options);
+                    if ($normalized === 'eu' && method_exists($client, 'setDataResidency')) {
+                        $client->setDataResidency('eu');
+                    }
+                    return $client;
+                };
 
+                $sendgrid = $createClient($resolvedRegion);
                 $response = $sendgrid->send($email);
                 $status = $response->statusCode();
                 if ($status >= 200 && $status < 300) {
@@ -1633,11 +1654,48 @@ function send_notification_email(string $to, string $subject, string $body): boo
                 }
 
                 $errorBody = trim((string) $response->body());
+                $isRegionalBlock = $status === 401 && stripos($errorBody, 'regional attribute') !== false;
+
+                if ($isRegionalBlock && $resolvedRegion !== 'eu') {
+                    try {
+                        $euResponse = $createClient('eu')->send($email);
+                    } catch (Throwable $retryError) {
+                        $logFailure(
+                            $retryError,
+                            'SendGrid EU retry failed. Switch to the EU region in Settings → Email delivery or export SENDGRID_REGION=eu, then try again.'
+                        );
+                        return false;
+                    }
+
+                    $euStatus = $euResponse->statusCode();
+                    if ($euStatus >= 200 && $euStatus < 300) {
+                        $logDiagnostic('Initial SendGrid request was rejected due to a regional mismatch, but retrying via the EU endpoint succeeded. Update Settings → Email delivery or export SENDGRID_REGION=eu to avoid the extra attempt.');
+                        return true;
+                    }
+
+                    $euBody = trim((string) $euResponse->body());
+                    $message = 'SendGrid API responded with HTTP ' . $euStatus;
+                    if ($euBody !== '') {
+                        $message .= ': ' . $euBody;
+                    }
+
+                    $logFailure(
+                        new RuntimeException($message),
+                        'Initial request returned HTTP 401 with a regional attribute error. Switch to the EU region in Settings → Email delivery or export SENDGRID_REGION=eu.'
+                    );
+                    return false;
+                }
+
                 $message = 'SendGrid API responded with HTTP ' . $status;
                 if ($errorBody !== '') {
                     $message .= ': ' . $errorBody;
                 }
-                throw new RuntimeException($message);
+
+                $logFailure(
+                    new RuntimeException($message),
+                    $isRegionalBlock ? 'Switch to the EU region in Settings → Email delivery or export SENDGRID_REGION=eu.' : null
+                );
+                return false;
             } catch (Throwable $sendgridError) {
                 $logFailure($sendgridError);
                 return false;

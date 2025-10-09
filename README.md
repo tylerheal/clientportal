@@ -107,7 +107,9 @@ To verify the SDK wiring end-to-end, run the included helper script:
 php bin/test_sendgrid_api.php recipient@example.com
 ```
 
-The script sends a short plaintext + HTML message to the recipient passed on the command line using `SENDGRID_API_KEY`. When `SENDGRID_REGION=eu` is exported, it will automatically pin requests to the EU API and call `$sendgrid->setDataResidency('eu')`.
+The script sends a short plaintext + HTML message to the recipient passed on the command line using `SENDGRID_API_KEY`. When `SENDGRID_REGION=eu` is exported, it pins requests to the EU API (calling `$sendgrid->setDataResidency('eu')` when available). If the API responds with HTTP 401 and the message `User is not authorized to send mail based on their regional attribute`, the helper retries the EU endpoint automatically and prints instructions to set `SENDGRID_REGION=eu` (or pick the EU region in **Settings → Email delivery**) so future sends succeed on the first attempt.
+
+The application mirrors that behaviour when queueing real notifications: the first SendGrid request uses your configured region, but if it receives the same 401 regional block it retries once against the EU endpoint. Successful fallbacks are logged to `data/mail.log` as a reminder to switch the saved region, while failures include troubleshooting notes alongside the response payload.
 
 ### SendGrid SMTP relay
 

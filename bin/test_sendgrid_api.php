@@ -31,36 +31,87 @@ $email->addTo($recipient);
 $email->addContent('text/plain', 'and easy to do anywhere, even with PHP');
 $email->addContent('text/html', '<strong>and easy to do anywhere, even with PHP</strong>');
 
-$options = [];
-if ($region === 'eu') {
-    $options['host'] = 'https://api.eu.sendgrid.com';
-}
+$normalizeRegion = static function (string $value): string {
+    $value = strtolower(trim($value));
+    return $value === 'eu' ? 'eu' : 'global';
+};
 
-$sendgrid = new \SendGrid($apiKey, $options);
-if ($region === 'eu' && method_exists($sendgrid, 'setDataResidency')) {
-    $sendgrid->setDataResidency('eu');
-}
+$resolvedRegion = $normalizeRegion($region);
+$createClient = static function (string $targetRegion) use ($apiKey): \SendGrid {
+    $normalized = strtolower($targetRegion) === 'eu' ? 'eu' : 'global';
+    $options = [];
+    if ($normalized === 'eu') {
+        $options['host'] = 'https://api.eu.sendgrid.com';
+    }
+    $client = new \SendGrid($apiKey, $options);
+    if ($normalized === 'eu' && method_exists($client, 'setDataResidency')) {
+        $client->setDataResidency('eu');
+    }
+    return $client;
+};
 
 try {
-    $response = $sendgrid->send($email);
+    $response = $createClient($resolvedRegion)->send($email);
 } catch (Throwable $error) {
     fwrite(STDERR, 'SendGrid API call failed: ' . $error->getMessage() . "\n");
     exit(1);
 }
 
 $status = $response->statusCode();
-if ($status < 200 || $status >= 300) {
+if ($status >= 200 && $status < 300) {
+    echo "SendGrid API responded with HTTP {$status}. Email queued successfully.\n";
+    exit(0);
+}
+
+$errorBody = trim((string) $response->body());
+$isRegionalBlock = $status === 401 && stripos($errorBody, 'regional attribute') !== false;
+
+if ($isRegionalBlock && $resolvedRegion !== 'eu') {
+    try {
+        $euResponse = $createClient('eu')->send($email);
+    } catch (Throwable $retryError) {
+        fwrite(
+            STDERR,
+            'Initial SendGrid request returned HTTP 401 due to a regional attribute mismatch and the EU retry failed: ' . $retryError->getMessage() . "\n"
+            . "Switch to the EU region in Settings → Email delivery or export SENDGRID_REGION=eu before retrying.\n"
+        );
+        exit(1);
+    }
+
+    $euStatus = $euResponse->statusCode();
+    if ($euStatus >= 200 && $euStatus < 300) {
+        echo "SendGrid API responded with HTTP {$euStatus} after retrying the EU endpoint. Email queued successfully.\n";
+        fwrite(
+            STDERR,
+            "Update SENDGRID_REGION=eu (or pick the EU region in Settings → Email delivery) to avoid the initial 401 response.\n"
+        );
+        exit(0);
+    }
+
+    $euBody = trim((string) $euResponse->body());
     fwrite(
         STDERR,
         sprintf(
-            "SendGrid API returned HTTP %d\nHeaders: %s\nBody: %s\n",
-            $status,
-            json_encode($response->headers(), JSON_PRETTY_PRINT),
-            $response->body()
+            "SendGrid EU retry returned HTTP %d%s. Switch to the EU region in Settings → Email delivery or export SENDGRID_REGION=eu.\n",
+            $euStatus,
+            $euBody !== '' ? ': ' . $euBody : ''
         )
     );
     exit(1);
 }
 
-echo "SendGrid API responded with HTTP {$status}. Email queued successfully.\n";
-exit(0);
+fwrite(
+    STDERR,
+    sprintf(
+        "SendGrid API returned HTTP %d\nHeaders: %s\nBody: %s\n",
+        $status,
+        json_encode($response->headers(), JSON_PRETTY_PRINT),
+        $response->body()
+    )
+);
+
+if ($isRegionalBlock) {
+    fwrite(STDERR, "Switch to the EU region in Settings → Email delivery or export SENDGRID_REGION=eu before retrying.\n");
+}
+
+exit(1);
