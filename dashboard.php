@@ -833,8 +833,24 @@ if (is_post()) {
                         ];
                         $subscriptionResponse = stripe_api_request('POST', 'v1/subscriptions', $subscriptionParams);
                         $stripeSubscriptionId = $subscriptionResponse['id'] ?? '';
-                        $latestInvoice = $subscriptionResponse['latest_invoice'] ?? [];
-                        $intent = $latestInvoice['payment_intent'] ?? [];
+                        $latestInvoice = $subscriptionResponse['latest_invoice'] ?? null;
+                        if (is_string($latestInvoice) && $latestInvoice !== '') {
+                            $latestInvoice = stripe_api_request('GET', 'v1/invoices/' . $latestInvoice, [
+                                'expand[]' => 'payment_intent',
+                            ]);
+                        }
+                        if (!is_array($latestInvoice)) {
+                            $latestInvoice = [];
+                        }
+
+                        $intent = $latestInvoice['payment_intent'] ?? null;
+                        if (is_string($intent) && $intent !== '') {
+                            $intent = stripe_api_request('GET', 'v1/payment_intents/' . $intent);
+                        }
+                        if (!is_array($intent)) {
+                            $intent = [];
+                        }
+
                         $intentId = $intent['id'] ?? null;
                         $clientSecret = $intent['client_secret'] ?? null;
                         if (!$intentId || !$clientSecret || $stripeSubscriptionId === '') {
