@@ -402,6 +402,35 @@ if (is_post()) {
                 set_setting('paypal_mode', $paypalMode);
                 flash('success', 'Payment settings saved.');
                 break;
+            case 'test_subscription_cycle':
+                require_login('admin');
+                $subscriptionId = (int) ($_POST['subscription_id'] ?? 0);
+                $force = isset($_POST['force']) && $_POST['force'] === '1';
+                if ($subscriptionId <= 0) {
+                    throw new RuntimeException('Select a subscription to test.');
+                }
+
+                $result = trigger_subscription_cycle($pdo, $subscriptionId, $force);
+                if (!empty($result['skipped'])) {
+                    $reason = $result['reason'] ?? 'The subscription is not due for renewal yet.';
+                    flash('error', $reason);
+                    $redirectTarget = 'admin/payments';
+                    break;
+                }
+
+                $message = 'Invoice #' . ($result['invoice_id'] ?? '?') . ' generated';
+                if (!empty($result['charged'])) {
+                    $provider = strtoupper((string) ($result['provider'] ?? '')); 
+                    $message .= $provider !== '' ? ' and charged via ' . $provider . '.' : ' and charged automatically.';
+                } elseif (!empty($result['provider_managed'])) {
+                    $message .= '. The external subscription will handle the payment automatically.';
+                } else {
+                    $message .= '. Review the invoice to confirm payment or collect manually.';
+                }
+
+                flash('success', $message);
+                $redirectTarget = 'admin/payments';
+                break;
             case 'create_admin_user':
                 require_login('admin');
                 $email = strtolower(trim($_POST['email'] ?? ''));
@@ -1209,6 +1238,11 @@ if ($user['role'] === 'admin') {
     }
     $templates = $pdo->query('SELECT * FROM email_templates ORDER BY name')->fetchAll();
     $invoices = $pdo->query('SELECT i.*, u.name AS client_name, s.name AS service_name FROM invoices i JOIN users u ON u.id = i.user_id JOIN services s ON s.id = i.service_id ORDER BY i.created_at DESC')->fetchAll();
+    $subscriptionSummaries = [];
+    if ($view === 'payments') {
+        $subscriptionStmt = $pdo->query('SELECT s.*, u.name AS client_name, u.email, sv.name AS service_name, sv.price FROM subscriptions s JOIN users u ON u.id = s.user_id JOIN services sv ON sv.id = s.service_id WHERE s.status = "active" ORDER BY s.next_billing_at ASC');
+        $subscriptionSummaries = $subscriptionStmt->fetchAll();
+    }
 
     $selectedTicket = null;
     $selectedMessages = [];

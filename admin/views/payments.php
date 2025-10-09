@@ -65,4 +65,58 @@ $paypalMode = strtolower(get_setting('paypal_mode', 'sandbox')) === 'live' ? 'li
             </div>
         </form>
     </div>
+    <?php if (!empty($subscriptionSummaries)): ?>
+        <div class="card">
+            <header class="section-header">
+                <div>
+                    <h3>Subscription renewals</h3>
+                    <p class="hint">Use the test action to raise the next invoice immediately and attempt an automatic charge with your sandbox credentials before going live.</p>
+                </div>
+            </header>
+            <div class="table-wrapper">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Client</th>
+                            <th>Service</th>
+                            <th>Interval</th>
+                            <th>Next billing</th>
+                            <th>Status</th>
+                            <th>Test</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($subscriptionSummaries as $subscription): ?>
+                            <tr>
+                                <td>
+                                    <strong><?= e($subscription['client_name']); ?></strong>
+                                    <div class="subtle"><?= e($subscription['email']); ?></div>
+                                </td>
+                                <td>
+                                    <strong><?= e($subscription['service_name']); ?></strong>
+                                    <div class="subtle"><?= e(format_currency((float) $subscription['price'])); ?></div>
+                                </td>
+                                <td><?= e(ucfirst($subscription['interval'])); ?></td>
+                                <td><?= e(format_datetime($subscription['next_billing_at'])); ?></td>
+                                <td><?= e(ucfirst($subscription['status'])); ?></td>
+                                <td>
+                                    <form action="<?= e(url_for('dashboard')); ?>" method="post" class="inline-form">
+                                        <input type="hidden" name="action" value="test_subscription_cycle">
+                                        <input type="hidden" name="redirect" value="admin/payments">
+                                        <input type="hidden" name="subscription_id" value="<?= (int) $subscription['id']; ?>">
+                                        <input type="hidden" name="force" value="1">
+                                        <button type="submit" class="button button--primary">Run test charge</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    <?php else: ?>
+        <div class="card">
+            <p class="subtle">No active subscriptions yet. Once a client purchases a recurring service, it will appear here for testing.</p>
+        </div>
+    <?php endif; ?>
 </section>
