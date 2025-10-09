@@ -59,6 +59,25 @@ if (!isset($definitions[$serviceSlug])) {
 $currentDefinition = $definitions[$serviceSlug];
 $serviceRecord = $findService($serviceLookup, $currentDefinition['candidates']);
 
+if ($serviceRecord && $serviceSlug === 'care-plans') {
+    $interval = strtolower((string) ($serviceRecord['billing_interval'] ?? 'one_time'));
+    if ($interval !== 'monthly') {
+        $pdo = get_db();
+        $pdo->prepare('UPDATE services SET billing_interval = :interval, updated_at = :updated WHERE id = :id')
+            ->execute([
+                'interval' => 'monthly',
+                'updated' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+                'id' => $serviceRecord['id'],
+            ]);
+        $serviceRecord['billing_interval'] = 'monthly';
+    }
+}
+
+$orderIntervalValue = strtolower((string) ($serviceRecord['billing_interval'] ?? 'one_time'));
+if (!in_array($orderIntervalValue, ['monthly', 'annual'], true)) {
+    $orderIntervalValue = 'one_time';
+}
+
 if (isset($currentDefinition['title'])) {
     $pageTitle = $currentDefinition['title'];
 }
@@ -129,6 +148,7 @@ $detailPath = 'dashboard/services/' . $serviceSlug;
                         <input type="hidden" name="action" value="create_order">
                         <input type="hidden" name="service_id" value="<?= (int) $serviceRecord['id']; ?>">
                         <input type="hidden" name="redirect" value="<?= e($detailPath); ?>">
+                        <input type="hidden" name="order_interval" value="<?= e($orderIntervalValue); ?>">
                         <input type="hidden" name="order_total" value="<?= number_format($malwarePrice, 2, '.', ''); ?>" data-order-total>
                         <input type="hidden" name="payment_method" value="<?= e(array_key_first($paymentOptions)); ?>" data-payment-method>
                         <fieldset class="fieldset">
@@ -256,6 +276,7 @@ $detailPath = 'dashboard/services/' . $serviceSlug;
                         <input type="hidden" name="action" value="create_order">
                         <input type="hidden" name="service_id" value="<?= (int) $serviceRecord['id']; ?>">
                         <input type="hidden" name="redirect" value="<?= e($detailPath); ?>">
+                        <input type="hidden" name="order_interval" value="<?= e($orderIntervalValue); ?>">
                         <input type="hidden" name="order_total" value="<?= number_format($carePlans[$selectedPlanKey]['price'], 2, '.', ''); ?>" data-order-total>
                         <input type="hidden" name="payment_method" value="<?= e(array_key_first($paymentOptions)); ?>" data-payment-method>
                         <fieldset class="fieldset">
@@ -366,6 +387,7 @@ $detailPath = 'dashboard/services/' . $serviceSlug;
                         <input type="hidden" name="action" value="create_order">
                         <input type="hidden" name="service_id" value="<?= (int) $serviceRecord['id']; ?>">
                         <input type="hidden" name="redirect" value="<?= e($detailPath); ?>">
+                        <input type="hidden" name="order_interval" value="<?= e($orderIntervalValue); ?>">
                         <input type="hidden" name="order_total" value="<?= number_format($supportRate, 2, '.', ''); ?>" data-order-total>
                         <input type="hidden" name="payment_method" value="<?= e(array_key_first($paymentOptions)); ?>" data-payment-method>
                         <fieldset class="fieldset">

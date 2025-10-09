@@ -488,6 +488,27 @@ if (is_post()) {
                 if (!$service) {
                     throw new RuntimeException('The selected service is not available.');
                 }
+                $requestedInterval = strtolower(trim($_POST['order_interval'] ?? ''));
+                $validIntervals = ['one_time', 'monthly', 'annual'];
+                if (!in_array($requestedInterval, $validIntervals, true)) {
+                    $requestedInterval = strtolower((string) ($service['billing_interval'] ?? 'one_time'));
+                }
+                if (!in_array($requestedInterval, $validIntervals, true)) {
+                    $requestedInterval = 'one_time';
+                }
+                $serviceInterval = strtolower((string) ($service['billing_interval'] ?? 'one_time'));
+                if ($requestedInterval !== $serviceInterval && in_array($requestedInterval, ['monthly', 'annual'], true)) {
+                    $serviceInterval = $requestedInterval;
+                    $service['billing_interval'] = $serviceInterval;
+                    $pdo->prepare('UPDATE services SET billing_interval = :interval, updated_at = :updated WHERE id = :id')
+                        ->execute([
+                            'interval' => $serviceInterval,
+                            'updated' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+                            'id' => $service['id'],
+                        ]);
+                } else {
+                    $service['billing_interval'] = $serviceInterval;
+                }
                 $custom = $_POST['custom'] ?? [];
                 if (!is_array($custom)) {
                     $custom = [];
@@ -559,6 +580,8 @@ if (is_post()) {
                     'amount' => $orderTotal,
                     'currency' => currency_code(),
                     'payment_method' => $paymentMethod,
+                    'subscription_id' => $subscriptionId,
+                    'subscription_interval' => $service['billing_interval'] ?? 'one_time',
                 ];
 
                 if (is_ajax_request()) {
@@ -1264,6 +1287,10 @@ if ($user['role'] === 'admin') {
     $invoices = $pdo->query('SELECT i.*, u.name AS client_name, s.name AS service_name FROM invoices i JOIN users u ON u.id = i.user_id JOIN services s ON s.id = i.service_id ORDER BY i.created_at DESC')->fetchAll();
     $subscriptionSummaries = [];
     if ($view === 'payments') {
+        $backfillInvoices = $pdo->query('SELECT * FROM invoices WHERE subscription_id IS NULL AND order_id IS NOT NULL');
+        foreach ($backfillInvoices->fetchAll() as $invoiceRow) {
+            ensure_subscription_record($pdo, $invoiceRow);
+        }
         $subscriptionStmt = $pdo->query('SELECT s.*, u.name AS client_name, u.email, sv.name AS service_name, sv.price FROM subscriptions s JOIN users u ON u.id = s.user_id JOIN services sv ON sv.id = s.service_id WHERE s.status = "active" ORDER BY s.next_billing_at ASC');
         $subscriptionSummaries = $subscriptionStmt->fetchAll();
     }

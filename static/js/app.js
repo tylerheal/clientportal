@@ -1259,6 +1259,8 @@
 
                         showFeedback(card, 'Order saved. Complete the payment to confirm.', 'info');
 
+                        const subscriptionId = Number(data.subscription_id || 0);
+                        const subscriptionInterval = data.subscription_interval || '';
                         window.PortalPayments.open({
                             id: invoiceId,
                             orderId: data.order_id || null,
@@ -1266,6 +1268,8 @@
                             currency: currencyCode,
                             service,
                             paymentMethod,
+                            subscriptionId: Number.isFinite(subscriptionId) && subscriptionId > 0 ? subscriptionId : 0,
+                            subscriptionInterval,
                         }, {
                             onPaid: () => {
                                 showFeedback(card, 'Payment complete! We’ll be in touch shortly.', 'success');

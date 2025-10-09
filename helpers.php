@@ -903,11 +903,42 @@ function ensure_subscription_record(PDO $pdo, array $invoice): ?int
         return $existingId;
     }
 
-    $serviceStmt = $pdo->prepare('SELECT billing_interval FROM services WHERE id = :id LIMIT 1');
+    $serviceStmt = $pdo->prepare('SELECT billing_interval, name FROM services WHERE id = :id LIMIT 1');
     $serviceStmt->execute(['id' => $serviceId]);
-    $billingInterval = strtolower((string) $serviceStmt->fetchColumn());
+    $serviceRow = $serviceStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $billingInterval = strtolower((string) ($serviceRow['billing_interval'] ?? ''));
+    $orderIntervalStmt = $pdo->prepare('SELECT billing_interval FROM orders WHERE id = :id LIMIT 1');
+    $orderIntervalStmt->execute(['id' => $orderId]);
+    $orderIntervalRaw = $orderIntervalStmt->fetchColumn();
+    $orderInterval = strtolower((string) $orderIntervalRaw);
+    if (!in_array($billingInterval, ['monthly', 'annual'], true) && in_array($orderInterval, ['monthly', 'annual'], true)) {
+        $billingInterval = $orderInterval;
+    }
+    if (!in_array($billingInterval, ['monthly', 'annual'], true) && !empty($serviceRow['name'])) {
+        $normalized = strtolower((string) $serviceRow['name']);
+        if (strpos($normalized, 'care plan') !== false) {
+            $billingInterval = 'monthly';
+        }
+    }
     if (!in_array($billingInterval, ['monthly', 'annual'], true)) {
         return null;
+    }
+
+    if (isset($serviceRow['billing_interval']) && strtolower((string) $serviceRow['billing_interval']) !== $billingInterval) {
+        $pdo->prepare('UPDATE services SET billing_interval = :interval, updated_at = :updated WHERE id = :id')
+            ->execute([
+                'interval' => $billingInterval,
+                'updated' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+                'id' => $serviceId,
+            ]);
+    }
+    if ($orderInterval !== $billingInterval) {
+        $pdo->prepare('UPDATE orders SET billing_interval = :interval, updated_at = :updated WHERE id = :id')
+            ->execute([
+                'interval' => $billingInterval,
+                'updated' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+                'id' => $orderId,
+            ]);
     }
 
     $now = new \DateTimeImmutable();
