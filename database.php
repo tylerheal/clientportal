@@ -159,6 +159,7 @@ function initialise_schema(PDO $pdo): void
     ensure_nullable_invoice_subscription($pdo);
     ensure_user_payment_columns($pdo);
     ensure_subscription_payment_columns($pdo);
+    ensure_service_payment_metadata($pdo);
 
     $pdo->exec('CREATE TABLE IF NOT EXISTS payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -268,6 +269,19 @@ function ensure_subscription_payment_columns(PDO $pdo): void
     if (!in_array('paypal_subscription_id', $names, true)) {
         $pdo->exec('ALTER TABLE subscriptions ADD COLUMN paypal_subscription_id TEXT');
     }
+}
+
+function ensure_service_payment_metadata(PDO $pdo): void
+{
+    $stmt = $pdo->query('PRAGMA table_info(services)');
+    $columns = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+    $names = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $columns);
+
+    if (!in_array('payment_metadata', $names, true)) {
+        $pdo->exec('ALTER TABLE services ADD COLUMN payment_metadata TEXT');
+    }
+
+    $pdo->exec('UPDATE services SET payment_metadata = "{}" WHERE payment_metadata IS NULL');
 }
 
 function seed_default_admin(PDO $pdo): void

@@ -122,6 +122,41 @@ function persist_user_settings(PDO $pdo, int $userId, array $settings): string
     return $payload;
 }
 
+function get_service_payment_metadata(PDO $pdo, int $serviceId): array
+{
+    $stmt = $pdo->prepare('SELECT payment_metadata FROM services WHERE id = :id LIMIT 1');
+    $stmt->execute(['id' => $serviceId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row) {
+        return [];
+    }
+
+    $raw = (string) ($row['payment_metadata'] ?? '');
+    if (trim($raw) === '') {
+        return [];
+    }
+
+    try {
+        $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+    } catch (Throwable $e) {
+        return [];
+    }
+
+    return is_array($decoded) ? $decoded : [];
+}
+
+function save_service_payment_metadata(PDO $pdo, int $serviceId, array $metadata): void
+{
+    $payload = json_encode($metadata, JSON_THROW_ON_ERROR);
+    $stmt = $pdo->prepare('UPDATE services SET payment_metadata = :meta, updated_at = :updated WHERE id = :id');
+    $stmt->execute([
+        'meta' => $payload,
+        'updated' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+        'id' => $serviceId,
+    ]);
+}
+
 function require_login(?string $role = null): void
 {
     if (!current_user()) {
@@ -555,24 +590,51 @@ function paypal_api_request(string $method, string $path, ?array $payload = null
     throw new RuntimeException('PayPal request failed with repeated authentication errors.');
 }
 
-function ensure_paypal_product(string $productId, string $name, string $description): void
+function create_paypal_product(string $name, string $description): string
 {
-    try {
-        paypal_api_request('GET', 'v1/catalogs/products/' . urlencode($productId));
-        return;
-    } catch (PayPalApiException $e) {
-        if ($e->getStatusCode() !== 404) {
-            throw $e;
+    $nameTrimmed = function_exists('mb_substr') ? mb_substr($name, 0, 127) : substr($name, 0, 127);
+    $descriptionTrimmed = function_exists('mb_substr') ? mb_substr($description, 0, 256) : substr($description, 0, 256);
+
+    $payload = [
+        'name' => $nameTrimmed,
+        'description' => $descriptionTrimmed,
+        'type' => 'SERVICE',
+        'category' => 'SOFTWARE',
+    ];
+
+    $product = paypal_api_request('POST', 'v1/catalogs/products', $payload);
+    $productId = (string) ($product['id'] ?? '');
+
+    if ($productId === '') {
+        throw new RuntimeException('PayPal did not return a product identifier.');
+    }
+
+    return $productId;
+}
+
+function ensure_paypal_product_for_service(int $serviceId, string $serviceName): string
+{
+    $pdo = get_db();
+    $metadata = get_service_payment_metadata($pdo, $serviceId);
+    $productId = (string) ($metadata['paypal_product_id'] ?? '');
+    $description = 'Recurring service for ' . $serviceName;
+
+    if ($productId !== '') {
+        try {
+            paypal_api_request('GET', 'v1/catalogs/products/' . urlencode($productId));
+            return $productId;
+        } catch (PayPalApiException $exception) {
+            if ($exception->getStatusCode() !== 404) {
+                throw $exception;
+            }
         }
     }
 
-    paypal_api_request('POST', 'v1/catalogs/products', [
-        'id' => $productId,
-        'name' => $name,
-        'description' => $description,
-        'type' => 'SERVICE',
-        'category' => 'SOFTWARE',
-    ]);
+    $productId = create_paypal_product($serviceName, $description);
+    $metadata['paypal_product_id'] = $productId;
+    save_service_payment_metadata($pdo, $serviceId, $metadata);
+
+    return $productId;
 }
 
 function create_paypal_plan(string $productId, string $name, string $intervalUnit, string $currency, string $amount): string
@@ -655,9 +717,12 @@ function prepare_paypal_subscription_plan(array $invoice, array $subscription): 
     $amount = number_format((float) ($invoice['total'] ?? 0), 2, '.', '');
     $currency = currency_code();
 
-    $productId = 'PROD-' . (int) ($invoice['service_id'] ?? 0);
-    ensure_paypal_product($productId, $serviceName, 'Recurring service for ' . $serviceName);
+    $serviceId = (int) ($invoice['service_id'] ?? 0);
+    if ($serviceId <= 0) {
+        throw new RuntimeException('Unable to prepare PayPal subscription without a service reference.');
+    }
 
+    $productId = ensure_paypal_product_for_service($serviceId, $serviceName);
     $unit = $interval === 'annual' ? 'YEAR' : 'MONTH';
     $planName = $serviceName . ' ' . ($interval === 'annual' ? 'Annual' : 'Monthly');
     $planId = create_paypal_plan($productId, $planName, $unit, $currency, $amount);
