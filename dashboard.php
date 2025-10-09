@@ -67,6 +67,39 @@ if ($view === 'services') {
     }
 }
 
+$stripeSessionParam = isset($_GET['stripe_session']) ? trim((string) $_GET['stripe_session']) : '';
+if ($stripeSessionParam !== '') {
+    $invoiceParam = (int) ($_GET['invoice'] ?? 0);
+    if ($invoiceParam > 0) {
+        $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, o.payment_reference, s.name AS service_name, u.email, u.name, u.stripe_customer_id AS user_stripe_customer_id FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id JOIN users u ON u.id = i.user_id WHERE i.id = :id AND (i.user_id = :user OR :is_admin = 1) LIMIT 1');
+        $invoiceStmt->execute([
+            'id' => $invoiceParam,
+            'user' => $user['id'],
+            'is_admin' => is_admin($user) ? 1 : 0,
+        ]);
+        $invoiceRow = $invoiceStmt->fetch();
+        if ($invoiceRow) {
+            try {
+                finalize_stripe_checkout_session($pdo, $invoiceRow, $stripeSessionParam);
+                flash('success', 'Subscription payment completed successfully.');
+            } catch (Throwable $exception) {
+                flash('error', $exception->getMessage());
+            }
+        } else {
+            flash('error', 'Invoice not found for Stripe confirmation.');
+        }
+    } else {
+        flash('error', 'Missing invoice reference for Stripe confirmation.');
+    }
+
+    redirect('dashboard?view=invoices');
+}
+
+if (isset($_GET['checkout']) && $_GET['checkout'] === 'cancelled') {
+    flash('error', 'Stripe checkout was cancelled before completion.');
+    redirect('dashboard?view=invoices');
+}
+
 function parse_builder_lines(string $input): string
 {
     $lines = array_filter(array_map('trim', preg_split('/\r?\n/', $input)));
@@ -822,9 +855,6 @@ if (is_post()) {
                     $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
 
                     if ($subscriptionId > 0) {
-                        if (!$customerId) {
-                            throw new RuntimeException('Unable to prepare the Stripe customer for the subscription.');
-                        }
                         if ($mode === 'google_pay') {
                             throw new RuntimeException('Recurring subscriptions must be paid with a saved card.');
                         }
@@ -834,84 +864,52 @@ if (is_post()) {
                         if (!$subscription) {
                             throw new RuntimeException('Subscription details were not found.');
                         }
-                        $intervalUnit = strtolower((string) ($subscription['interval'] ?? 'monthly')) === 'annual' ? 'year' : 'month';
-                        $priceResponse = stripe_api_request('POST', 'v1/prices', [
-                            'currency' => strtolower($currency),
-                            'unit_amount' => to_minor_units($amount, $currency),
-                            'recurring[interval]' => $intervalUnit,
-                            'recurring[interval_count]' => 1,
-                            'product_data[name]' => $invoice['service_name'],
-                            'product_data[metadata][service_id]' => (string) $invoice['service_id'],
-                        ]);
-                        $priceId = $priceResponse['id'] ?? '';
-                        if ($priceId === '') {
-                            throw new RuntimeException('Unable to prepare the Stripe price for the subscription.');
-                        }
-                        $subscriptionParams = [
-                            'customer' => $customerId,
-                            'items[0][price]' => $priceId,
-                            'payment_behavior' => 'default_incomplete',
-                            'metadata[invoice_id]' => (string) $invoice['id'],
-                            'expand[]' => 'latest_invoice.payment_intent',
-                        ];
-                        $subscriptionResponse = stripe_api_request('POST', 'v1/subscriptions', $subscriptionParams);
-                        $stripeSubscriptionId = $subscriptionResponse['id'] ?? '';
-                        $latestInvoice = $subscriptionResponse['latest_invoice'] ?? null;
-                        if (is_string($latestInvoice) && $latestInvoice !== '') {
-                            $latestInvoice = stripe_api_request('GET', 'v1/invoices/' . $latestInvoice, [
-                                'expand[]' => 'payment_intent',
-                            ]);
-                        }
-                        if (!is_array($latestInvoice)) {
-                            $latestInvoice = [];
-                        }
 
-                        $intent = $latestInvoice['payment_intent'] ?? null;
-                        if (is_string($intent) && $intent !== '') {
-                            $intent = stripe_api_request('GET', 'v1/payment_intents/' . $intent);
-                        }
-                        if (!is_array($intent)) {
-                            $intent = [];
-                        }
+                        $interval = strtolower((string) ($subscription['interval'] ?? 'monthly'));
+                        $priceId = ensure_stripe_price_for_service(
+                            $pdo,
+                            (int) $invoice['service_id'],
+                            (string) $invoice['service_name'],
+                            $amount,
+                            $currency,
+                            $interval
+                        );
 
-                        $intentId = $intent['id'] ?? null;
-                        $clientSecret = $intent['client_secret'] ?? null;
-                        if (!$intentId || !$clientSecret || $stripeSubscriptionId === '') {
-                            throw new RuntimeException('Unable to prepare the Stripe subscription payment.');
-                        }
-                        $pdo->prepare('UPDATE subscriptions SET stripe_customer = :customer, stripe_subscription_id = :subscription, updated_at = :updated WHERE id = :id')
-                            ->execute([
-                                'customer' => $customerId,
-                                'subscription' => $stripeSubscriptionId,
-                                'updated' => $now,
-                                'id' => $subscriptionId,
-                            ]);
-                        $pdo->prepare('UPDATE orders SET payment_reference = :reference, updated_at = :updated WHERE id = :id AND user_id = :user')
-                            ->execute([
-                                'reference' => $intentId,
-                                'updated' => $now,
-                                'id' => $invoice['order_id'],
-                                'user' => $user['id'],
-                            ]);
-                        $pdo->prepare('INSERT INTO payments (invoice_id, provider, reference, amount, status, created_at, updated_at) VALUES (:invoice_id, :provider, :reference, :amount, :status, :created_at, :updated_at)')
-                            ->execute([
-                                'invoice_id' => $invoice['id'],
-                                'provider' => $paymentMethod,
-                                'reference' => $intentId,
-                                'amount' => $amount,
-                                'status' => 'initiated',
-                                'created_at' => $now,
-                                'updated_at' => $now,
-                            ]);
-                        echo json_encode([
-                            'intent' => $intentId,
-                            'client_secret' => $clientSecret,
-                            'publishable_key' => $availability['stripe_publishable'],
-                            'currency' => $currency,
-                            'amount' => $amount,
-                            'payment_method' => $paymentMethod,
+                        $successUrl = absolute_url('dashboard?view=invoices&invoice=' . $invoice['id'] . '&stripe_session={CHECKOUT_SESSION_ID}');
+                        $cancelUrl = absolute_url('dashboard?view=invoices&invoice=' . $invoice['id'] . '&checkout=cancelled');
+
+                        $sessionParams = [
                             'mode' => 'subscription',
-                            'subscription' => $stripeSubscriptionId,
+                            'line_items[0][price]' => $priceId,
+                            'line_items[0][quantity]' => 1,
+                            'success_url' => $successUrl,
+                            'cancel_url' => $cancelUrl,
+                            'client_reference_id' => 'invoice:' . $invoice['id'],
+                            'metadata[invoice_id]' => (string) $invoice['id'],
+                            'subscription_data[metadata][invoice_id]' => (string) $invoice['id'],
+                            'subscription_data[metadata][service_id]' => (string) $invoice['service_id'],
+                            'subscription_data[metadata][user_id]' => (string) $invoice['user_id'],
+                            'allow_promotion_codes' => 'true',
+                        ];
+
+                        if ($customerId) {
+                            $sessionParams['customer'] = $customerId;
+                        } elseif (!empty($invoice['email'])) {
+                            $sessionParams['customer_email'] = $invoice['email'];
+                        }
+
+                        $session = stripe_api_request('POST', 'v1/checkout/sessions', $sessionParams);
+                        $sessionId = (string) ($session['id'] ?? '');
+                        $checkoutUrl = (string) ($session['url'] ?? '');
+
+                        if ($sessionId === '' || $checkoutUrl === '') {
+                            throw new RuntimeException('Unable to prepare the Stripe subscription checkout session.');
+                        }
+
+                        echo json_encode([
+                            'mode' => 'redirect',
+                            'checkout_url' => $checkoutUrl,
+                            'session' => $sessionId,
                         ], JSON_THROW_ON_ERROR);
                     } else {
                         $params = [

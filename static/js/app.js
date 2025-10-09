@@ -852,51 +852,67 @@
                 invoice_id: details.id,
                 mode: provider === 'google_pay' ? 'google_pay' : 'card',
             })
-                .then((payload) => ensureStripe(payload.publishable_key)
-                    .then((stripe) => {
-                        stripeState.instance = stripe;
-                        stripeState.clientSecret = payload.client_secret;
-                        stripeState.intentId = payload.intent;
-                        stripeState.provider = provider;
-                        if (payload.subscription) {
-                            stripeState.subscriptionId = payload.subscription;
-                        } else {
-                            stripeState.subscriptionId = null;
-                        }
-                        if (stripeSubmit) {
-                            stripeSubmit.textContent = `Pay ${formatMoney(details.amount, details.currency || 'GBP')}`;
-                            stripeSubmit.disabled = false;
-                        }
-                        if (providerEl) {
-                            providerEl.hidden = false;
-                            if (details.isSubscription) {
-                                providerEl.textContent = 'Card subscription';
-                            } else {
-                                providerEl.textContent = provider === 'google_pay' ? 'Google Pay' : 'Card payment';
-                            }
-                        }
-                        if (paymentIntro) {
-                            if (details.isSubscription) {
-                                paymentIntro.textContent = 'Your card will be saved for future renewals after this payment.';
-                            } else {
-                                paymentIntro.textContent = provider === 'google_pay'
-                                    ? 'Use Google Pay on supported devices or enter your card details below.'
-                                    : 'Enter your card details to complete payment.';
-                            }
-                        }
-                        if (stripePanel) {
-                            stripePanel.hidden = false;
-                            mountCardElement();
-                        }
-                        if (provider === 'google_pay') {
-                            setupPaymentRequest(stripe, details);
-                        } else if (paymentRequestPanel) {
-                            paymentRequestPanel.hidden = true;
-                        }
+                .then((payload) => {
+                    if (!payload) {
+                        throw new Error('Unable to prepare the payment.');
+                    }
+                    if (payload.mode === 'redirect' && payload.checkout_url) {
                         if (feedbackEl) {
-                            feedbackEl.textContent = '';
+                            feedbackEl.textContent = 'Redirecting to secure checkout…';
                         }
-                    }))
+                        window.location.href = payload.checkout_url;
+                        return null;
+                    }
+                    if (!payload.publishable_key || !payload.client_secret || !payload.intent) {
+                        throw new Error(payload.error || 'Stripe response was incomplete.');
+                    }
+                    return ensureStripe(payload.publishable_key)
+                        .then((stripe) => {
+                            stripeState.instance = stripe;
+                            stripeState.clientSecret = payload.client_secret;
+                            stripeState.intentId = payload.intent;
+                            stripeState.provider = provider;
+                            if (payload.subscription) {
+                                stripeState.subscriptionId = payload.subscription;
+                            } else {
+                                stripeState.subscriptionId = null;
+                            }
+                            if (stripeSubmit) {
+                                stripeSubmit.textContent = `Pay ${formatMoney(details.amount, details.currency || 'GBP')}`;
+                                stripeSubmit.disabled = false;
+                            }
+                            if (providerEl) {
+                                providerEl.hidden = false;
+                                if (details.isSubscription) {
+                                    providerEl.textContent = 'Card subscription';
+                                } else {
+                                    providerEl.textContent = provider === 'google_pay' ? 'Google Pay' : 'Card payment';
+                                }
+                            }
+                            if (paymentIntro) {
+                                if (details.isSubscription) {
+                                    paymentIntro.textContent = 'Your card will be saved for future renewals after this payment.';
+                                } else {
+                                    paymentIntro.textContent = provider === 'google_pay'
+                                        ? 'Use Google Pay on supported devices or enter your card details below.'
+                                        : 'Enter your card details to complete payment.';
+                                }
+                            }
+                            if (stripePanel) {
+                                stripePanel.hidden = false;
+                                mountCardElement();
+                            }
+                            if (provider === 'google_pay') {
+                                setupPaymentRequest(stripe, details);
+                            } else if (paymentRequestPanel) {
+                                paymentRequestPanel.hidden = true;
+                            }
+                            if (feedbackEl) {
+                                feedbackEl.textContent = '';
+                            }
+                            return null;
+                        });
+                })
                 .catch((error) => {
                     hidePanels();
                     if (feedbackEl) {

@@ -39,6 +39,13 @@ function url_for(string $path = ''): string
     return $prefix . ($path === '/' ? '' : $path);
 }
 
+function absolute_url(string $path = ''): string
+{
+    $scheme = (!empty($_SERVER['HTTPS']) && strtolower((string) $_SERVER['HTTPS']) !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    return $scheme . '://' . $host . url_for($path);
+}
+
 function asset_url(string $path): string
 {
     if ($path === '') {
@@ -637,6 +644,62 @@ function ensure_paypal_product_for_service(int $serviceId, string $serviceName):
     return $productId;
 }
 
+function ensure_stripe_price_for_service(PDO $pdo, int $serviceId, string $serviceName, float $amount, string $currency, string $interval): string
+{
+    if ($amount <= 0) {
+        throw new RuntimeException('Service price must be greater than zero for Stripe subscriptions.');
+    }
+
+    $metadata = get_service_payment_metadata($pdo, $serviceId);
+    $prices = [];
+    if (isset($metadata['stripe_prices']) && is_array($metadata['stripe_prices'])) {
+        $prices = $metadata['stripe_prices'];
+    }
+
+    $intervalKey = strtolower($interval);
+    if (!in_array($intervalKey, ['monthly', 'annual'], true)) {
+        $intervalKey = 'monthly';
+    }
+
+    $currencyCode = strtolower($currency);
+    $normalizedAmount = number_format($amount, 2, '.', '');
+
+    if (isset($prices[$intervalKey]) && is_array($prices[$intervalKey])) {
+        $record = $prices[$intervalKey];
+        $recordCurrency = strtolower((string) ($record['currency'] ?? ''));
+        $recordAmount = number_format((float) ($record['amount'] ?? 0), 2, '.', '');
+        $priceId = (string) ($record['price_id'] ?? '');
+        if ($priceId !== '' && $recordCurrency === $currencyCode && $recordAmount === $normalizedAmount) {
+            return $priceId;
+        }
+    }
+
+    $intervalUnit = $intervalKey === 'annual' ? 'year' : 'month';
+    $response = stripe_api_request('POST', 'v1/prices', [
+        'currency' => $currencyCode,
+        'unit_amount' => to_minor_units($amount, $currency),
+        'recurring[interval]' => $intervalUnit,
+        'recurring[interval_count]' => 1,
+        'product_data[name]' => $serviceName,
+        'product_data[metadata][service_id]' => (string) $serviceId,
+    ]);
+
+    $priceId = (string) ($response['id'] ?? '');
+    if ($priceId === '') {
+        throw new RuntimeException('Stripe did not return a price identifier.');
+    }
+
+    $prices[$intervalKey] = [
+        'price_id' => $priceId,
+        'currency' => $currencyCode,
+        'amount' => $normalizedAmount,
+    ];
+    $metadata['stripe_prices'] = $prices;
+    save_service_payment_metadata($pdo, $serviceId, $metadata);
+
+    return $priceId;
+}
+
 function create_paypal_plan(string $productId, string $name, string $intervalUnit, string $currency, string $amount): string
 {
     $currencyCode = strtoupper($currency);
@@ -968,6 +1031,83 @@ function ensure_subscription_record(PDO $pdo, array $invoice): ?int
     }
 
     return null;
+}
+
+function finalize_stripe_checkout_session(PDO $pdo, array $invoice, string $sessionId): void
+{
+    $sessionId = trim($sessionId);
+    $invoiceId = (int) ($invoice['id'] ?? 0);
+
+    if ($sessionId === '' || $invoiceId <= 0) {
+        throw new RuntimeException('Stripe checkout session details were incomplete.');
+    }
+
+    $session = stripe_api_request('GET', 'v1/checkout/sessions/' . urlencode($sessionId), [
+        'expand[]' => 'subscription',
+        'expand[]' => 'latest_invoice.payment_intent',
+    ]);
+
+    if (strtolower((string) ($session['mode'] ?? '')) !== 'subscription') {
+        throw new RuntimeException('Stripe session is not a subscription checkout.');
+    }
+
+    $sessionInvoiceId = (int) ($session['metadata']['invoice_id'] ?? 0);
+    if ($sessionInvoiceId !== 0 && $sessionInvoiceId !== $invoiceId) {
+        throw new RuntimeException('Stripe session does not match the requested invoice.');
+    }
+
+    $paymentStatus = strtolower((string) ($session['payment_status'] ?? ''));
+    if (!in_array($paymentStatus, ['paid', 'no_payment_required'], true)) {
+        throw new RuntimeException('Stripe has not completed the checkout session yet.');
+    }
+
+    $subscription = $session['subscription'] ?? null;
+    if (is_string($subscription) && $subscription !== '') {
+        $subscription = stripe_api_request('GET', 'v1/subscriptions/' . urlencode($subscription), [
+            'expand[]' => 'latest_invoice.payment_intent',
+        ]);
+    }
+    if (!is_array($subscription)) {
+        $subscription = [];
+    }
+
+    $stripeSubscriptionId = (string) ($subscription['id'] ?? '');
+    $customerId = (string) ($session['customer'] ?? ($subscription['customer'] ?? ''));
+
+    $latestInvoice = $session['latest_invoice'] ?? ($subscription['latest_invoice'] ?? null);
+    if (is_string($latestInvoice) && $latestInvoice !== '') {
+        $latestInvoice = stripe_api_request('GET', 'v1/invoices/' . urlencode($latestInvoice), [
+            'expand[]' => 'payment_intent',
+        ]);
+    }
+    if (!is_array($latestInvoice)) {
+        $latestInvoice = [];
+    }
+
+    $intent = $latestInvoice['payment_intent'] ?? ($session['payment_intent'] ?? null);
+    if (is_string($intent) && $intent !== '') {
+        $intent = stripe_api_request('GET', 'v1/payment_intents/' . urlencode($intent));
+    }
+    if (!is_array($intent)) {
+        $intent = [];
+    }
+
+    $intentId = (string) ($intent['id'] ?? '');
+    if ($intentId === '') {
+        throw new RuntimeException('Stripe did not return a payment intent for the checkout session.');
+    }
+
+    $paymentMethodId = (string) ($intent['payment_method'] ?? ($intent['latest_charge']['payment_method'] ?? ''));
+
+    $metadata = [
+        'stripe_customer' => $customerId,
+        'stripe_subscription_id' => $stripeSubscriptionId,
+    ];
+    if ($paymentMethodId !== '') {
+        $metadata['stripe_payment_method'] = $paymentMethodId;
+    }
+
+    finalise_invoice_payment($pdo, $invoice, 'stripe', $intentId, (float) ($invoice['total'] ?? 0), $metadata);
 }
 
 /**
