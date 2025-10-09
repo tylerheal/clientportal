@@ -52,6 +52,16 @@ Mark invoices as paid from the admin **Orders** table; doing so triggers the pay
 
 > **Stripe subscription API note:** the portal charges recurring services by generating a new [PaymentIntent](https://docs.stripe.com/api/payment_intents) for each cycle using the saved customer and payment method. Because we do not create Stripe `subscription` or `subscription_item` objects, the requirements in [Stripe’s subscription item update docs](https://docs.stripe.com/api/subscription_items/update#update_subscription_item-price_data-recurring) do not affect the integration. If you later extend the portal to manage Stripe subscriptions directly, ensure each `price_data` payload includes the `recurring` block (`interval`, `interval_count`, etc.) as described in the documentation.
 
+### PayPal subscription flow
+
+Recurring services that use PayPal already implement the recommended API sequence end to end:
+
+1. **Product creation** – `prepare_paypal_subscription_plan()` calls `ensure_paypal_product_for_service()` which reuses or issues `POST /v1/catalogs/products` through `create_paypal_product()` so every recurring service has a PayPal catalog product.【F:helpers.php†L613-L666】
+2. **Plan creation & activation** – the helper immediately invokes `create_paypal_plan()`, sending `POST /v1/billing/plans`, activating the plan, and polling `GET /v1/billing/plans/{id}` until the status is `ACTIVE` before returning the identifier.【F:helpers.php†L668-L720】
+3. **Client checkout** – recurring services enqueue the PayPal JS SDK with `vault=true`/`intent=subscription`, and the payment modal renders subscription buttons that call `actions.subscription.create` with the plan ID so clients subscribe directly from the portal.【F:templates/client/pages/service_detail.php†L8-L15】【F:templates/client/partials/payments_modal.php†L11-L28】
+
+Once credentials are saved, no manual product/plan setup is required—each checkout dynamically provisions the product and plan, records the identifiers, and PayPal handles future renewals.
+
 ## Notifications & email
 
 - Outbound email can now use either PHP's `mail()` transport or authenticated SMTP. Configure the sender name, address, and SMTP credentials from **Admin → Settings → Email delivery**. When delivery fails (for example on a local machine without an SMTP relay) the payload is logged to `data/mail.log` so nothing is lost.
