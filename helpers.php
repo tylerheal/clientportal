@@ -747,15 +747,43 @@ function create_paypal_plan(string $productId, string $name, string $intervalUni
         throw new RuntimeException('PayPal did not return a plan identifier.');
     }
 
-    paypal_api_request('POST', 'v1/billing/plans/' . urlencode($planId) . '/activate', []);
+    $planPath = 'v1/billing/plans/' . urlencode($planId);
+    $prefetchedStatus = null;
+
+    try {
+        paypal_api_request('POST', $planPath . '/activate', [
+            'reason' => 'Initial activation',
+        ]);
+    } catch (PayPalApiException $exception) {
+        if ($exception->getStatusCode() === 422) {
+            try {
+                $details = paypal_api_request('GET', $planPath);
+                $prefetchedStatus = strtoupper((string) ($details['status'] ?? ''));
+                if ($prefetchedStatus === 'ACTIVE') {
+                    return $planId;
+                }
+            } catch (\Throwable $inner) {
+                // Ignore and fall through to retry logic below.
+            }
+        }
+
+        if ($prefetchedStatus !== 'ACTIVE') {
+            throw $exception;
+        }
+    }
 
     // PayPal plan activation can take a moment to propagate; poll until it is active.
     $maxAttempts = 20;
     $delayMicroseconds = 500000; // 0.5 seconds
     for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
         try {
-            $details = paypal_api_request('GET', 'v1/billing/plans/' . urlencode($planId));
-            $status = strtoupper((string) ($details['status'] ?? ''));
+            if ($prefetchedStatus !== null) {
+                $status = $prefetchedStatus;
+                $prefetchedStatus = null;
+            } else {
+                $details = paypal_api_request('GET', $planPath);
+                $status = strtoupper((string) ($details['status'] ?? ''));
+            }
             if ($status === 'ACTIVE') {
                 return $planId;
             }
