@@ -9,7 +9,9 @@ if (is_post()) {
     $email = strtolower(trim($_POST['email'] ?? ''));
     $password = $_POST['password'] ?? '';
 
-    if ($email === '' || $password === '') {
+    if (!verify_turnstile($_POST['cf-turnstile-response'] ?? '', $_SERVER['REMOTE_ADDR'] ?? null)) {
+        flash('error', 'Please confirm you are human before signing in.');
+    } elseif ($email === '' || $password === '') {
         flash('error', 'Please enter both your email and password.');
     } else {
         $stmt = $pdo->prepare('SELECT * FROM users WHERE email = :email LIMIT 1');

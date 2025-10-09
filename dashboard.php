@@ -67,52 +67,6 @@ if ($view === 'services') {
     }
 }
 
-function admin_user_ids(PDO $pdo): array
-{
-    $ids = [];
-    foreach ($pdo->query("SELECT id FROM users WHERE role = 'admin'") as $row) {
-        $ids[] = (int) $row['id'];
-    }
-    return $ids;
-}
-
-function admin_notification_emails(PDO $pdo): array
-{
-    $emails = [];
-
-    foreach ($pdo->query("SELECT email FROM users WHERE role = 'admin'") as $row) {
-        $email = strtolower(trim((string) ($row['email'] ?? '')));
-        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $emails[] = $email;
-        }
-    }
-
-    $supportEmail = trim((string) get_setting('support_email', ''));
-    if ($supportEmail !== '' && filter_var($supportEmail, FILTER_VALIDATE_EMAIL)) {
-        $emails[] = strtolower($supportEmail);
-    }
-
-    return array_values(array_unique($emails));
-}
-
-function notify_admins(PDO $pdo, string $message, ?string $link = null): void
-{
-    $company = get_setting('company_name', 'Service Portal');
-    $subject = sprintf('[%s] %s', $company, $message);
-    $body = $message;
-    if ($link) {
-        $body .= "\n\nOpen: " . $link;
-    }
-
-    foreach (admin_user_ids($pdo) as $adminId) {
-        record_notification($pdo, $adminId, $message, $link);
-    }
-
-    foreach (admin_notification_emails($pdo) as $email) {
-        send_notification_email($email, $subject, $body);
-    }
-}
-
 function parse_builder_lines(string $input): string
 {
     $lines = array_filter(array_map('trim', preg_split('/\r?\n/', $input)));
@@ -225,6 +179,11 @@ if (is_post()) {
                 $smtpEncryption = strtolower(trim($_POST['smtp_encryption'] ?? 'tls'));
                 $smtpPassword = $_POST['smtp_password'] ?? null;
                 $clearSmtpPassword = isset($_POST['clear_smtp_password']) && $_POST['clear_smtp_password'] === '1';
+                $turnstileEnabledFlag = isset($_POST['turnstile_enabled']) && $_POST['turnstile_enabled'] === '1';
+                $turnstileSiteKey = trim($_POST['turnstile_site_key'] ?? '');
+                $turnstileSecret = $_POST['turnstile_secret_key'] ?? null;
+                $clearTurnstileSecret = isset($_POST['clear_turnstile_secret']) && $_POST['clear_turnstile_secret'] === '1';
+                $currentTurnstileSecret = get_setting('turnstile_secret_key', '');
 
                 if (!empty($_FILES['brand_logo_file']) && ($_FILES['brand_logo_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
                     $file = $_FILES['brand_logo_file'];
@@ -285,6 +244,15 @@ if (is_post()) {
                     throw new RuntimeException('Provide a valid from email address.');
                 }
 
+                if ($turnstileEnabledFlag) {
+                    $secretCandidate = $turnstileSecret !== null && trim($turnstileSecret) !== ''
+                        ? trim($turnstileSecret)
+                        : trim((string) $currentTurnstileSecret);
+                    if ($turnstileSiteKey === '' || $secretCandidate === '') {
+                        throw new RuntimeException('Enter both the Turnstile site key and secret key to enable bot protection.');
+                    }
+                }
+
                 $validTransports = ['mail', 'smtp'];
                 if (!in_array($mailTransport, $validTransports, true)) {
                     $mailTransport = 'mail';
@@ -314,6 +282,8 @@ if (is_post()) {
                     'smtp_port' => $smtpPort === '' ? '587' : $smtpPort,
                     'smtp_username' => $smtpUsername,
                     'smtp_encryption' => $smtpEncryption,
+                    'turnstile_enabled' => $turnstileEnabledFlag ? '1' : '0',
+                    'turnstile_site_key' => $turnstileSiteKey,
                 ];
 
                 foreach ($settings as $key => $value) {
@@ -324,6 +294,12 @@ if (is_post()) {
                     set_setting('smtp_password', '');
                 } elseif ($smtpPassword !== null && $smtpPassword !== '') {
                     set_setting('smtp_password', $smtpPassword);
+                }
+
+                if ($clearTurnstileSecret) {
+                    set_setting('turnstile_secret_key', '');
+                } elseif ($turnstileSecret !== null && trim($turnstileSecret) !== '') {
+                    set_setting('turnstile_secret_key', trim($turnstileSecret));
                 }
 
                 flash('success', 'Settings updated successfully.');
@@ -646,7 +622,7 @@ if (is_post()) {
                     if ($invoiceId <= 0 || $paypalOrderId === '') {
                         throw new RuntimeException('Payment details were incomplete.');
                     }
-                    $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, s.name AS service_name, u.email, u.name FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id JOIN users u ON u.id = i.user_id WHERE i.id = :id AND i.user_id = :user LIMIT 1');
+                    $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, s.name AS service_name, u.email, u.name, u.stripe_customer_id AS user_stripe_customer_id FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id JOIN users u ON u.id = i.user_id WHERE i.id = :id AND i.user_id = :user LIMIT 1');
                     $invoiceStmt->execute(['id' => $invoiceId, 'user' => $user['id']]);
                     $invoice = $invoiceStmt->fetch();
                     if (!$invoice) {
@@ -690,7 +666,7 @@ if (is_post()) {
                     if (empty($availability['stripe'])) {
                         throw new RuntimeException('Stripe payments are not available right now.');
                     }
-                    $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, o.payment_reference, s.name AS service_name FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id WHERE i.id = :id AND i.user_id = :user LIMIT 1');
+                    $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, o.payment_reference, s.name AS service_name, u.email, u.name, u.stripe_customer_id AS user_stripe_customer_id, sub.stripe_customer AS subscription_stripe_customer, sub.stripe_payment_method AS subscription_stripe_payment_method FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id JOIN users u ON u.id = i.user_id LEFT JOIN subscriptions sub ON sub.id = i.subscription_id WHERE i.id = :id AND i.user_id = :user LIMIT 1');
                     $invoiceStmt->execute(['id' => $invoiceId, 'user' => $user['id']]);
                     $invoice = $invoiceStmt->fetch();
                     if (!$invoice) {
@@ -720,11 +696,25 @@ if (is_post()) {
                         'description' => $description,
                     ];
 
+                    $customerContext = [
+                        'id' => (int) $invoice['user_id'],
+                        'email' => $invoice['email'],
+                        'name' => $invoice['name'],
+                        'stripe_customer_id' => $invoice['user_stripe_customer_id'] ?? '',
+                    ];
+                    $customerId = ensure_stripe_customer($pdo, $customerContext);
+                    if ($customerId) {
+                        $params['customer'] = $customerId;
+                    }
+
                     if ($mode === 'google_pay') {
                         $params['payment_method_types[]'] = 'card';
                     } else {
                         $params['automatic_payment_methods[enabled]'] = 'true';
                         $params['automatic_payment_methods[allow_redirects]'] = 'never';
+                        if ((int) ($invoice['subscription_id'] ?? 0) > 0) {
+                            $params['setup_future_usage'] = 'off_session';
+                        }
                     }
 
                     $intent = stripe_api_request('POST', 'v1/payment_intents', $params);
@@ -779,7 +769,7 @@ if (is_post()) {
                     if (empty(payments_available()['stripe'])) {
                         throw new RuntimeException('Stripe payments are not available right now.');
                     }
-                    $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, s.name AS service_name, u.email, u.name FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id JOIN users u ON u.id = i.user_id WHERE i.id = :id AND i.user_id = :user LIMIT 1');
+                    $invoiceStmt = $pdo->prepare('SELECT i.*, o.id AS order_id, o.payment_status, o.payment_method, s.name AS service_name, u.email, u.name, u.stripe_customer_id AS user_stripe_customer_id FROM invoices i JOIN orders o ON o.id = i.order_id JOIN services s ON s.id = i.service_id JOIN users u ON u.id = i.user_id WHERE i.id = :id AND i.user_id = :user LIMIT 1');
                     $invoiceStmt->execute(['id' => $invoiceId, 'user' => $user['id']]);
                     $invoice = $invoiceStmt->fetch();
                     if (!$invoice) {
@@ -802,7 +792,23 @@ if (is_post()) {
                         throw new RuntimeException('Stripe has not confirmed the payment.');
                     }
 
-                    finalise_invoice_payment($pdo, $invoice, $paymentMethod, $intentId, (float) $invoice['total']);
+                    $stripeMeta = [];
+                    $stripeCustomer = trim((string) ($intent['customer'] ?? ''));
+                    if ($stripeCustomer === '' && !empty($invoice['user_stripe_customer_id'])) {
+                        $stripeCustomer = (string) $invoice['user_stripe_customer_id'];
+                    }
+                    if ($stripeCustomer !== '') {
+                        $stripeMeta['stripe_customer'] = $stripeCustomer;
+                    }
+                    $paymentMethodId = trim((string) ($intent['payment_method'] ?? ''));
+                    if ($paymentMethodId === '' && !empty($intent['latest_charge']['payment_method'])) {
+                        $paymentMethodId = (string) $intent['latest_charge']['payment_method'];
+                    }
+                    if ($paymentMethodId !== '') {
+                        $stripeMeta['stripe_payment_method'] = $paymentMethodId;
+                    }
+
+                    finalise_invoice_payment($pdo, $invoice, $paymentMethod, $intentId, (float) $invoice['total'], $stripeMeta);
                     echo json_encode(['status' => 'paid'], JSON_THROW_ON_ERROR);
                 } catch (Throwable $e) {
                     http_response_code(400);

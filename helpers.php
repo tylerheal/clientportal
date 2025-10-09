@@ -188,6 +188,62 @@ function payments_available(): array
     return $cache;
 }
 
+function turnstile_enabled(): bool
+{
+    return is_truthy_setting('turnstile_enabled')
+        && trim((string) get_setting('turnstile_site_key', '')) !== ''
+        && trim((string) get_setting('turnstile_secret_key', '')) !== '';
+}
+
+function turnstile_site_key(): string
+{
+    return trim((string) get_setting('turnstile_site_key', ''));
+}
+
+function verify_turnstile(string $token, ?string $remoteIp = null): bool
+{
+    if (!turnstile_enabled()) {
+        return true;
+    }
+
+    $token = trim($token);
+    if ($token === '') {
+        return false;
+    }
+
+    $secret = trim((string) get_setting('turnstile_secret_key', ''));
+    if ($secret === '') {
+        return false;
+    }
+
+    $payload = http_build_query(array_filter([
+        'secret' => $secret,
+        'response' => $token,
+        'remoteip' => $remoteIp,
+    ]));
+
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'POST',
+            'header' => "Content-type: application/x-www-form-urlencoded\r\n",
+            'content' => $payload,
+            'timeout' => 10,
+        ],
+    ]);
+
+    $result = @file_get_contents('https://challenges.cloudflare.com/turnstile/v0/siteverify', false, $context);
+    if ($result === false) {
+        return false;
+    }
+
+    $decoded = json_decode($result, true);
+    if (!is_array($decoded)) {
+        return false;
+    }
+
+    return (bool) ($decoded['success'] ?? false);
+}
+
 function stripe_publishable_key(): string
 {
     return trim((string) get_setting('stripe_publishable_key', ''));
@@ -302,6 +358,49 @@ function stripe_api_request(string $method, string $path, array $params = []): a
     }
 
     return $data;
+}
+
+function ensure_stripe_customer(PDO $pdo, array $userRow): ?string
+{
+    $customerId = trim((string) ($userRow['stripe_customer_id'] ?? ''));
+    if ($customerId !== '') {
+        return $customerId;
+    }
+
+    if (empty(payments_available()['stripe'])) {
+        return null;
+    }
+
+    $email = trim((string) ($userRow['email'] ?? ''));
+    $name = trim((string) ($userRow['name'] ?? ''));
+
+    $params = [];
+    if ($email !== '') {
+        $params['email'] = $email;
+    }
+    if ($name !== '') {
+        $params['name'] = $name;
+    }
+
+    try {
+        $response = stripe_api_request('POST', 'v1/customers', $params);
+    } catch (Throwable $e) {
+        return null;
+    }
+
+    $createdId = trim((string) ($response['id'] ?? ''));
+    if ($createdId === '') {
+        return null;
+    }
+
+    $stmt = $pdo->prepare('UPDATE users SET stripe_customer_id = :customer, updated_at = :updated WHERE id = :id');
+    $stmt->execute([
+        'customer' => $createdId,
+        'updated' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+        'id' => (int) ($userRow['id'] ?? 0),
+    ]);
+
+    return $createdId;
 }
 
 function paypal_api_base(): string
@@ -434,12 +533,13 @@ function paypal_api_request(string $method, string $path, ?array $payload = null
     throw new RuntimeException('PayPal request failed with repeated authentication errors.');
 }
 
-function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, string $reference, ?float $amount = null): void
+function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, string $reference, ?float $amount = null, array $metadata = []): void
 {
     $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
     $invoiceId = (int) ($invoice['id'] ?? 0);
     $orderId = (int) ($invoice['order_id'] ?? 0);
     $userId = (int) ($invoice['user_id'] ?? 0);
+    $subscriptionId = (int) ($invoice['subscription_id'] ?? 0);
     $serviceName = $invoice['service_name'] ?? '';
     $clientName = $invoice['name'] ?? ($invoice['client_name'] ?? '');
     $clientEmail = $invoice['email'] ?? null;
@@ -493,6 +593,37 @@ function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, st
             $pdo->rollBack();
         }
         throw $e;
+    }
+
+    if ($subscriptionId > 0) {
+        $updates = [];
+        if ($provider === 'stripe') {
+            $stripeCustomer = trim((string) ($metadata['stripe_customer'] ?? ''));
+            $stripeMethod = trim((string) ($metadata['stripe_payment_method'] ?? ''));
+            if ($stripeCustomer !== '') {
+                $updates['stripe_customer'] = $stripeCustomer;
+            }
+            if ($stripeMethod !== '') {
+                $updates['stripe_payment_method'] = $stripeMethod;
+            }
+        } elseif ($provider === 'paypal') {
+            $paypalSubscription = trim((string) ($metadata['paypal_subscription_id'] ?? ''));
+            if ($paypalSubscription !== '') {
+                $updates['paypal_subscription_id'] = $paypalSubscription;
+            }
+        }
+
+        if (!empty($updates)) {
+            $fields = [];
+            foreach ($updates as $key => $value) {
+                $fields[] = $key . ' = :' . $key;
+            }
+            $fields[] = 'updated_at = :updated_at';
+            $updates['updated_at'] = $now;
+            $updates['id'] = $subscriptionId;
+            $stmt = $pdo->prepare('UPDATE subscriptions SET ' . implode(', ', $fields) . ' WHERE id = :id');
+            $stmt->execute($updates);
+        }
     }
 
     $replacements = [
@@ -701,6 +832,52 @@ function generate_recovery_codes(int $count = 8): array
         $codes[] = strtoupper(bin2hex(random_bytes(4)));
     }
     return $codes;
+}
+
+function admin_user_ids(PDO $pdo): array
+{
+    $ids = [];
+    foreach ($pdo->query("SELECT id FROM users WHERE role = 'admin'") as $row) {
+        $ids[] = (int) $row['id'];
+    }
+    return $ids;
+}
+
+function admin_notification_emails(PDO $pdo): array
+{
+    $emails = [];
+
+    foreach ($pdo->query("SELECT email FROM users WHERE role = 'admin'") as $row) {
+        $email = strtolower(trim((string) ($row['email'] ?? '')));
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $emails[] = $email;
+        }
+    }
+
+    $supportEmail = trim((string) get_setting('support_email', ''));
+    if ($supportEmail !== '' && filter_var($supportEmail, FILTER_VALIDATE_EMAIL)) {
+        $emails[] = strtolower($supportEmail);
+    }
+
+    return array_values(array_unique($emails));
+}
+
+function notify_admins(PDO $pdo, string $message, ?string $link = null): void
+{
+    $company = get_setting('company_name', 'Service Portal');
+    $subject = sprintf('[%s] %s', $company, $message);
+    $body = $message;
+    if ($link) {
+        $body .= "\n\nOpen: " . $link;
+    }
+
+    foreach (admin_user_ids($pdo) as $adminId) {
+        record_notification($pdo, $adminId, $message, $link);
+    }
+
+    foreach (admin_notification_emails($pdo) as $email) {
+        send_notification_email($email, $subject, $body);
+    }
 }
 
 function get_notifications(PDO $pdo, int $userId): array

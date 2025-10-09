@@ -4,7 +4,7 @@ require __DIR__ . '/../bootstrap.php';
 $pdo = get_db();
 $now = new DateTimeImmutable();
 
-$subs = $pdo->query('SELECT s.*, u.email, u.name, sv.name AS service_name, sv.price FROM subscriptions s JOIN users u ON u.id = s.user_id JOIN services sv ON sv.id = s.service_id WHERE s.status = "active"')->fetchAll();
+$subs = $pdo->query('SELECT s.*, u.email, u.name, sv.name AS service_name, sv.price, o.payment_method FROM subscriptions s JOIN users u ON u.id = s.user_id JOIN services sv ON sv.id = s.service_id LEFT JOIN orders o ON o.id = s.order_id WHERE s.status = "active"')->fetchAll();
 foreach ($subs as $subscription) {
     $next = new DateTimeImmutable($subscription['next_billing_at']);
     if ($next > $now) {
@@ -31,7 +31,63 @@ foreach ($subs as $subscription) {
             'id' => $subscription['id'],
         ]);
     $invoiceId = (int) $pdo->lastInsertId();
-    record_notification($pdo, (int) $subscription['user_id'], 'Invoice #' . $invoiceId . ' generated for ' . $subscription['service_name'], url_for('dashboard#invoices'));
+    $invoiceStmt = $pdo->prepare('SELECT i.*, u.email, u.name, s.name AS service_name, sub.stripe_customer, sub.stripe_payment_method FROM invoices i JOIN users u ON u.id = i.user_id JOIN services s ON s.id = i.service_id LEFT JOIN subscriptions sub ON sub.id = i.subscription_id WHERE i.id = :id LIMIT 1');
+    $invoiceStmt->execute(['id' => $invoiceId]);
+    $invoice = $invoiceStmt->fetch();
+
+    if ($invoice) {
+        $replacements = [
+            '{{name}}' => $invoice['name'],
+            '{{service}}' => $invoice['service_name'],
+            '{{invoice}}' => (string) $invoiceId,
+            '{{amount}}' => format_currency((float) $subscription['price']),
+            '{{due_date}}' => $dueAt->format('j M Y'),
+            '{{company}}' => get_setting('company_name', 'Service Portal'),
+        ];
+        $body = sprintf(
+            "Hi %s,\n\nWe've raised invoice #%s for %s. The total due is %s and it is payable by %s.",
+            $invoice['name'],
+            $invoiceId,
+            $invoice['service_name'],
+            format_currency((float) $subscription['price']),
+            $dueAt->format('j M Y')
+        );
+        send_templated_email($pdo, 'invoice_created', $replacements, $invoice['email'], 'New invoice issued', $body);
+        record_notification($pdo, (int) $subscription['user_id'], 'Invoice #' . $invoiceId . ' generated for ' . $subscription['service_name'], url_for('dashboard#invoices'));
+        notify_admins($pdo, 'Invoice #' . $invoiceId . ' generated for ' . $subscription['service_name'], url_for('admin/orders'));
+
+        $stripeCustomer = trim((string) ($invoice['stripe_customer'] ?? ''));
+        $stripeMethod = trim((string) ($invoice['stripe_payment_method'] ?? ''));
+        if ($stripeCustomer !== '' && $stripeMethod !== '' && !empty(payments_available()['stripe'])) {
+            $currency = currency_code();
+            try {
+                $intent = stripe_api_request('POST', 'v1/payment_intents', [
+                    'amount' => to_minor_units((float) $subscription['price'], $currency),
+                    'currency' => strtolower($currency),
+                    'customer' => $stripeCustomer,
+                    'payment_method' => $stripeMethod,
+                    'off_session' => 'true',
+                    'confirm' => 'true',
+                    'description' => sprintf('Subscription #%d – %s', $subscription['id'], $subscription['service_name']),
+                    'metadata[invoice_id]' => (string) $invoiceId,
+                    'metadata[subscription_id]' => (string) $subscription['id'],
+                ]);
+
+                $intentId = $intent['id'] ?? null;
+                if ($intentId) {
+                    finalise_invoice_payment($pdo, $invoice, 'stripe', $intentId, (float) $subscription['price'], [
+                        'stripe_customer' => $stripeCustomer,
+                        'stripe_payment_method' => $stripeMethod,
+                    ]);
+                }
+            } catch (Throwable $e) {
+                $message = 'Automatic payment failed for invoice #' . $invoiceId . ': ' . $e->getMessage();
+                error_log($message);
+                record_notification($pdo, (int) $subscription['user_id'], 'Automatic payment failed for invoice #' . $invoiceId . '. Please review the invoice to pay manually.', url_for('dashboard#invoices'));
+                notify_admins($pdo, $message, url_for('admin/orders'));
+            }
+        }
+    }
 }
 
 $overdueCutoff = $now->modify('-2 days')->format(DateTimeInterface::ATOM);

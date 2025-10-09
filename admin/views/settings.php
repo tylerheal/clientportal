@@ -20,6 +20,9 @@ $smtpPort = get_setting('smtp_port', '587');
 $smtpUsername = get_setting('smtp_username', '');
 $smtpEncryption = get_setting('smtp_encryption', 'tls');
 $smtpPasswordStored = get_setting('smtp_password', '') !== '';
+$turnstileEnabled = turnstile_enabled();
+$turnstileSiteKey = get_setting('turnstile_site_key', '');
+$turnstileSecretStored = get_setting('turnstile_secret_key', '') !== '';
 ?>
 <section class="page-section">
     <?php foreach (['error', 'success'] as $flashType): ?>
@@ -133,6 +136,24 @@ $smtpPasswordStored = get_setting('smtp_password', '') !== '';
                 <?php if ($smtpPasswordStored): ?>
                     <label class="checkbox-inline">
                         <input type="checkbox" name="clear_smtp_password" value="1"> Reset stored password
+                    </label>
+                <?php endif; ?>
+                <hr class="settings-divider">
+                <h3 class="settings-subheading">Bot protection</h3>
+                <p class="hint">Enable <a href="https://www.cloudflare.com/products/turnstile/" target="_blank" rel="noopener">Cloudflare Turnstile</a> on login and sign-up forms to reduce automated sign-ups.</p>
+                <label class="checkbox-inline">
+                    <input type="checkbox" name="turnstile_enabled" value="1"<?= $turnstileEnabled ? ' checked' : ''; ?>> Require Turnstile verification on auth forms
+                </label>
+                <label>Turnstile site key
+                    <input type="text" name="turnstile_site_key" value="<?= e($turnstileSiteKey); ?>" placeholder="0x4AAAA...">
+                </label>
+                <label>Turnstile secret key
+                    <input type="password" name="turnstile_secret_key" placeholder="Secret key" autocomplete="new-password">
+                    <span class="hint">Paste the secret key from your Cloudflare Turnstile dashboard. Leave blank to keep the stored key.</span>
+                </label>
+                <?php if ($turnstileSecretStored): ?>
+                    <label class="checkbox-inline">
+                        <input type="checkbox" name="clear_turnstile_secret" value="1"> Reset stored secret
                     </label>
                 <?php endif; ?>
             </div>

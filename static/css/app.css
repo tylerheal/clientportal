@@ -2050,6 +2050,16 @@ label {
   margin-top: 6px;
 }
 
+.auth-turnstile {
+  margin-top: 4px;
+  display: flex;
+  justify-content: center;
+}
+
+.auth-turnstile .cf-turnstile {
+  width: 100%;
+}
+
 .auth-form button {
   margin-top: 8px;
   padding: 12px;

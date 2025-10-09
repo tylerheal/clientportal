@@ -39,6 +39,7 @@ function initialise_schema(PDO $pdo): void
         totp_enabled INTEGER NOT NULL DEFAULT 0,
         totp_recovery_codes TEXT,
         avatar_url TEXT,
+        stripe_customer_id TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )');
@@ -126,6 +127,9 @@ function initialise_schema(PDO $pdo): void
         interval TEXT NOT NULL,
         next_billing_at TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT "active",
+        stripe_customer TEXT,
+        stripe_payment_method TEXT,
+        paypal_subscription_id TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY(order_id) REFERENCES orders(id),
@@ -152,6 +156,8 @@ function initialise_schema(PDO $pdo): void
     )');
 
     ensure_nullable_invoice_subscription($pdo);
+    ensure_user_payment_columns($pdo);
+    ensure_subscription_payment_columns($pdo);
 
     $pdo->exec('CREATE TABLE IF NOT EXISTS payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -226,6 +232,36 @@ function ensure_nullable_invoice_subscription(PDO $pdo): void
         throw $e;
     } finally {
         $pdo->exec('PRAGMA foreign_keys = ON');
+    }
+}
+
+function ensure_user_payment_columns(PDO $pdo): void
+{
+    $stmt = $pdo->query('PRAGMA table_info(users)');
+    $columns = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+    $names = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $columns);
+
+    if (!in_array('stripe_customer_id', $names, true)) {
+        $pdo->exec('ALTER TABLE users ADD COLUMN stripe_customer_id TEXT');
+    }
+}
+
+function ensure_subscription_payment_columns(PDO $pdo): void
+{
+    $stmt = $pdo->query('PRAGMA table_info(subscriptions)');
+    $columns = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+    $names = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $columns);
+
+    if (!in_array('stripe_customer', $names, true)) {
+        $pdo->exec('ALTER TABLE subscriptions ADD COLUMN stripe_customer TEXT');
+    }
+
+    if (!in_array('stripe_payment_method', $names, true)) {
+        $pdo->exec('ALTER TABLE subscriptions ADD COLUMN stripe_payment_method TEXT');
+    }
+
+    if (!in_array('paypal_subscription_id', $names, true)) {
+        $pdo->exec('ALTER TABLE subscriptions ADD COLUMN paypal_subscription_id TEXT');
     }
 }
 
@@ -322,6 +358,12 @@ function seed_default_templates(PDO $pdo): void
             'name' => 'Invoice payment success',
             'subject' => 'Payment received – Invoice #{{invoice}}',
             'body' => "Hi {{name}},\n\nWe've received your payment for invoice #{{invoice}} covering {{service}}. Thank you!\n\nRegards,\n{{company}}",
+        ],
+        [
+            'slug' => 'invoice_created',
+            'name' => 'Invoice created',
+            'subject' => 'Invoice #{{invoice}} for {{service}}',
+            'body' => "Hi {{name}},\n\nWe've raised invoice #{{invoice}} for {{service}}. The total due is {{amount}} and it is payable by {{due_date}}.\n\nRegards,\n{{company}}",
         ],
         [
             'slug' => 'invoice_overdue',

@@ -8,6 +8,8 @@ $logo = $logoSetting !== '' ? asset_url($logoSetting) : '';
 $primary = get_setting('brand_primary_color', '#2a6dff');
 $authHasLogo = $logo !== '';
 $view = $authView ?? 'login';
+$turnstileEnabled = turnstile_enabled();
+$turnstileSiteKey = $turnstileEnabled ? turnstile_site_key() : '';
 $baseAction = [
     'login' => url_for('login'),
     'signup' => url_for('signup'),
@@ -22,6 +24,9 @@ $baseAction = [
     <title><?= e($pageTitle ?? $company); ?></title>
     <link rel="stylesheet" href="<?= e(url_for('static/css/app.css')); ?>">
     <style><?= theme_styles(); ?></style>
+    <?php if ($turnstileEnabled): ?>
+        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <?php endif; ?>
 </head>
 <body class="auth-body">
     <div class="auth-wrapper">
@@ -57,6 +62,11 @@ $baseAction = [
                     <label>Password
                         <input type="password" name="password" required autocomplete="current-password">
                     </label>
+                    <?php if ($turnstileEnabled && $turnstileSiteKey !== ''): ?>
+                        <div class="auth-turnstile">
+                            <div class="cf-turnstile" data-sitekey="<?= e($turnstileSiteKey); ?>" data-theme="dark"></div>
+                        </div>
+                    <?php endif; ?>
                     <button type="submit">Sign in</button>
                     <p class="auth-meta">Don't have an account? <a href="<?= e(url_for('signup')); ?>">Sign up</a></p>
                 <?php elseif ($view === 'signup'): ?>
@@ -87,6 +97,11 @@ $baseAction = [
                             <input type="password" name="password_confirm" minlength="8" required autocomplete="new-password">
                         </label>
                     </div>
+                    <?php if ($turnstileEnabled && $turnstileSiteKey !== ''): ?>
+                        <div class="auth-turnstile">
+                            <div class="cf-turnstile" data-sitekey="<?= e($turnstileSiteKey); ?>" data-theme="dark"></div>
+                        </div>
+                    <?php endif; ?>
                     <button type="submit">Sign up</button>
                     <p class="auth-meta">Already have an account? <a href="<?= e(url_for('login')); ?>">Sign in</a></p>
                 <?php elseif ($view === 'verify-otp'): ?>

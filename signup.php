@@ -13,7 +13,9 @@ if (is_post()) {
     $password = $_POST['password'] ?? '';
     $confirm = $_POST['password_confirm'] ?? '';
 
-    if ($first === '' || $last === '' || $email === '' || $password === '') {
+    if (!verify_turnstile($_POST['cf-turnstile-response'] ?? '', $_SERVER['REMOTE_ADDR'] ?? null)) {
+        flash('error', 'Please confirm you are human before creating an account.');
+    } elseif ($first === '' || $last === '' || $email === '' || $password === '') {
         flash('error', 'Please complete all required fields.');
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         flash('error', 'Please use a valid email address.');
