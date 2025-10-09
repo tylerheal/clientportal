@@ -1044,7 +1044,6 @@ function finalize_stripe_checkout_session(PDO $pdo, array $invoice, string $sess
 
     $session = stripe_api_request('GET', 'v1/checkout/sessions/' . urlencode($sessionId), [
         'expand[]' => 'subscription',
-        'expand[]' => 'latest_invoice.payment_intent',
     ]);
 
     if (strtolower((string) ($session['mode'] ?? '')) !== 'subscription') {
