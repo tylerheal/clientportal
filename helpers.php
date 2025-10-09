@@ -1662,6 +1662,65 @@ function send_notification_email(string $to, string $subject, string $body): boo
         $verifyPeerName = get_setting('smtp_verify_peer_name', '1') !== '0';
         $allowSelfSigned = get_setting('smtp_allow_self_signed', '0') === '1';
 
+        $defaultVerifyPeer = $verifyPeer;
+        $defaultVerifyPeerName = $verifyPeerName;
+        $defaultAllowSelfSigned = $allowSelfSigned;
+
+        $envHost = trim((string) getenv('SMTP_HOST'));
+        if ($envHost !== '') {
+            $host = $envHost;
+        }
+
+        $envPort = trim((string) getenv('SMTP_PORT'));
+        if ($envPort !== '' && is_numeric($envPort)) {
+            $port = (int) $envPort;
+        }
+
+        $envUsername = trim((string) getenv('SMTP_USERNAME'));
+        if ($envUsername !== '') {
+            $username = $envUsername;
+        }
+
+        $envPassword = getenv('SMTP_PASSWORD');
+        if ($envPassword !== false && trim((string) $envPassword) !== '') {
+            $password = (string) $envPassword;
+        }
+
+        $envEncryption = strtolower(trim((string) getenv('SMTP_ENCRYPTION')));
+        if (in_array($envEncryption, ['tls', 'ssl', 'none'], true)) {
+            $encryption = $envEncryption;
+        }
+
+        $envVerifyPeer = getenv('SMTP_VERIFY_PEER');
+        if ($envVerifyPeer !== false && $envVerifyPeer !== '') {
+            $verifyPeerValue = filter_var($envVerifyPeer, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($verifyPeerValue !== null) {
+                $verifyPeer = (bool) $verifyPeerValue;
+            } else {
+                $verifyPeer = $defaultVerifyPeer;
+            }
+        }
+
+        $envVerifyPeerName = getenv('SMTP_VERIFY_PEER_NAME');
+        if ($envVerifyPeerName !== false && $envVerifyPeerName !== '') {
+            $verifyPeerNameValue = filter_var($envVerifyPeerName, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($verifyPeerNameValue !== null) {
+                $verifyPeerName = (bool) $verifyPeerNameValue;
+            } else {
+                $verifyPeerName = $defaultVerifyPeerName;
+            }
+        }
+
+        $envAllowSelfSigned = getenv('SMTP_ALLOW_SELF_SIGNED');
+        if ($envAllowSelfSigned !== false && $envAllowSelfSigned !== '') {
+            $allowSelfSignedValue = filter_var($envAllowSelfSigned, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($allowSelfSignedValue !== null) {
+                $allowSelfSigned = (bool) $allowSelfSignedValue;
+            } else {
+                $allowSelfSigned = $defaultAllowSelfSigned;
+            }
+        }
+
         if ($host !== '' && $username !== '' && $password !== '') {
             try {
                 if (!class_exists('PHPMailer\\PHPMailer\\PHPMailer')) {

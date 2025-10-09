@@ -104,7 +104,7 @@ $turnstileSecretStored = get_setting('turnstile_secret_key', '') !== '';
                 </label>
                 <hr class="settings-divider">
                 <h3 class="settings-subheading">Email delivery</h3>
-                <p class="hint">Send portal notifications via Microsoft 365 (SMTP) or keep the built-in PHP mail transport.</p>
+                <p class="hint">Send portal notifications via SMTP (Microsoft 365, SendGrid relay, etc.) or keep the built-in PHP mail transport.</p>
                 <label>From name
                     <input type="text" name="mail_from_name" value="<?= e($mailFromName); ?>" placeholder="<?= e($companyName); ?>">
                 </label>
@@ -135,14 +135,15 @@ $turnstileSecretStored = get_setting('turnstile_secret_key', '') !== '';
                     <span class="hint">Choose EU if your SendGrid account is hosted in the EU region.</span>
                 </label>
                 <label>SMTP host
-                    <input type="text" name="smtp_host" value="<?= e($smtpHost); ?>" placeholder="smtp.office365.com">
-                    <span class="hint">For Microsoft 365 use <code>smtp.office365.com</code>.</span>
+                    <input type="text" name="smtp_host" value="<?= e($smtpHost); ?>" placeholder="smtp.sendgrid.net">
+                    <span class="hint">Use <code>smtp.sendgrid.net</code> for SendGrid or <code>smtp.office365.com</code> for Microsoft 365.</span>
                 </label>
                 <label>SMTP port
                     <input type="text" name="smtp_port" value="<?= e($smtpPort); ?>" placeholder="587">
                 </label>
                 <label>SMTP username
-                    <input type="text" name="smtp_username" value="<?= e($smtpUsername); ?>" placeholder="you@yourdomain.com">
+                    <input type="text" name="smtp_username" value="<?= e($smtpUsername); ?>" placeholder="apikey or you@yourdomain.com">
+                    <span class="hint">SendGrid requires the username <code>apikey</code>. Other providers typically use your email address.</span>
                 </label>
                 <label>SMTP encryption
                     <select name="smtp_encryption">
@@ -160,9 +161,9 @@ $turnstileSecretStored = get_setting('turnstile_secret_key', '') !== '';
                 <label class="checkbox-inline">
                     <input type="checkbox" name="smtp_allow_self_signed" value="1"<?= $smtpAllowSelfSigned ? ' checked' : ''; ?>> Allow self-signed certificates
                 </label>
-                <label>SMTP password / app password
-                    <input type="password" name="smtp_password" placeholder="Microsoft 365 app password" autocomplete="new-password">
-                    <span class="hint">Generate an app password from Microsoft 365 security settings. Leave blank to keep the current password.</span>
+                <label>SMTP password / API key
+                    <input type="password" name="smtp_password" placeholder="SendGrid API key or provider password" autocomplete="new-password">
+                    <span class="hint">For SendGrid paste the API key shown under SMTP Relay. Leave blank to keep the current password.</span>
                 </label>
                 <?php if ($smtpPasswordStored): ?>
                     <label class="checkbox-inline">

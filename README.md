@@ -99,6 +99,32 @@ export SENDGRID_REGION="eu"
 
 The admin settings screen lets you persist a fallback API key/region in the database, but any environment variable will take precedence so you can swap credentials during deployments without touching production data.
 
+### SendGrid SMTP relay
+
+If you prefer SendGrid's SMTP relay instead of the Web API, configure the following under **Admin → Settings → Email delivery**:
+
+- **SMTP host:** `smtp.sendgrid.net`
+- **SMTP port:** `587` (TLS) or `465` (SSL)
+- **SMTP username:** `apikey`
+- **SMTP password / API key:** paste the full API key created on the SendGrid dashboard
+
+The password field is write-only—entering a new API key replaces the stored one, while leaving it blank keeps the existing secret. A "Reset stored password" checkbox appears if you need to clear it entirely.
+
+You can also drive the SMTP settings via environment variables, which override the saved configuration at runtime:
+
+```bash
+export SMTP_HOST="smtp.sendgrid.net"
+export SMTP_PORT="587"
+export SMTP_USERNAME="apikey"
+export SMTP_PASSWORD="<your api key>"
+export SMTP_ENCRYPTION="tls"          # tls, ssl, or none
+export SMTP_VERIFY_PEER="true"       # optional: true/false/0/1
+export SMTP_VERIFY_PEER_NAME="true"  # optional
+export SMTP_ALLOW_SELF_SIGNED="false"# optional
+```
+
+Adjust the verification flags when your hosting provider terminates TLS with a non-standard certificate.
+
 ## Styling & assets
 
 All UI styling is consolidated in `static/css/app.css`. The layout respects the configurable brand colour and font stored in settings. Feel free to extend or replace this stylesheet—no external Tailwind/Bootstrap dependencies are required.
