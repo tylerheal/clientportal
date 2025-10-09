@@ -1658,6 +1658,9 @@ function send_notification_email(string $to, string $subject, string $body): boo
         $username = trim((string) get_setting('smtp_username', ''));
         $password = get_setting('smtp_password', '');
         $encryption = strtolower((string) get_setting('smtp_encryption', 'tls'));
+        $verifyPeer = get_setting('smtp_verify_peer', '1') !== '0';
+        $verifyPeerName = get_setting('smtp_verify_peer_name', '1') !== '0';
+        $allowSelfSigned = get_setting('smtp_allow_self_signed', '0') === '1';
 
         if ($host !== '' && $username !== '' && $password !== '') {
             try {
@@ -1683,6 +1686,13 @@ function send_notification_email(string $to, string $subject, string $body): boo
                 } else {
                     $mailer->SMTPSecure = false;
                 }
+                $mailer->SMTPOptions = [
+                    'ssl' => [
+                        'verify_peer' => $verifyPeer,
+                        'verify_peer_name' => $verifyPeerName,
+                        'allow_self_signed' => $allowSelfSigned,
+                    ],
+                ];
                 $mailer->setFrom($fromAddress, $fromName);
                 $mailer->addAddress($to);
                 $mailer->Subject = $subject;

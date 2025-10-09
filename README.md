@@ -72,6 +72,7 @@ Once credentials are saved, no manual product/plan setup is required—each chec
   - **Encryption:** TLS
   - **Username:** Your Microsoft 365 mailbox address
   - **Password:** The generated app password (leave the field blank later to keep it stored, or tick “Reset stored password” to clear it).
+- If your SMTP relay terminates TLS with a custom certificate (for example, when SendGrid is proxied via your hosting provider), untick **Verify server certificate** or **Verify certificate host name**, or enable **Allow self-signed certificates** before retrying the test email.
 - In-app notifications surface via the bell icon in the top bar. Clicking **Clear** (or the bell button) marks alerts as read.
 - Email templates live in the **Automations** section. You can add new templates or remove the defaults (order confirmation, ticket reply, payment success, invoice overdue).
 - To verify email delivery end-to-end: submit a new service order from the client portal, capture payment (or mark it paid from the admin orders table), reply to a support ticket, and confirm that each stage emails both the client and administrators while logging the corresponding invoices.

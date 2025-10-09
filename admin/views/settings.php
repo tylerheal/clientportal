@@ -19,6 +19,9 @@ $smtpHost = get_setting('smtp_host', '');
 $smtpPort = get_setting('smtp_port', '587');
 $smtpUsername = get_setting('smtp_username', '');
 $smtpEncryption = get_setting('smtp_encryption', 'tls');
+$smtpVerifyPeer = get_setting('smtp_verify_peer', '1') === '1';
+$smtpVerifyPeerName = get_setting('smtp_verify_peer_name', '1') === '1';
+$smtpAllowSelfSigned = get_setting('smtp_allow_self_signed', '0') === '1';
 $smtpPasswordStored = get_setting('smtp_password', '') !== '';
 $sendgridKeyStored = get_setting('sendgrid_api_key', '') !== '';
 $sendgridRegion = get_setting('sendgrid_region', 'us');
@@ -147,6 +150,15 @@ $turnstileSecretStored = get_setting('turnstile_secret_key', '') !== '';
                         <option value="ssl"<?= $smtpEncryption === 'ssl' ? ' selected' : ''; ?>>SSL</option>
                         <option value="none"<?= $smtpEncryption === 'none' ? ' selected' : ''; ?>>None</option>
                     </select>
+                </label>
+                <label class="checkbox-inline">
+                    <input type="checkbox" name="smtp_verify_peer" value="1"<?= $smtpVerifyPeer ? ' checked' : ''; ?>> Verify server certificate
+                </label>
+                <label class="checkbox-inline">
+                    <input type="checkbox" name="smtp_verify_peer_name" value="1"<?= $smtpVerifyPeerName ? ' checked' : ''; ?>> Verify certificate host name
+                </label>
+                <label class="checkbox-inline">
+                    <input type="checkbox" name="smtp_allow_self_signed" value="1"<?= $smtpAllowSelfSigned ? ' checked' : ''; ?>> Allow self-signed certificates
                 </label>
                 <label>SMTP password / app password
                     <input type="password" name="smtp_password" placeholder="Microsoft 365 app password" autocomplete="new-password">

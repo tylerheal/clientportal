@@ -210,6 +210,9 @@ if (is_post()) {
                 $smtpPort = trim($_POST['smtp_port'] ?? '587');
                 $smtpUsername = trim($_POST['smtp_username'] ?? '');
                 $smtpEncryption = strtolower(trim($_POST['smtp_encryption'] ?? 'tls'));
+                $smtpVerifyPeer = isset($_POST['smtp_verify_peer']) && $_POST['smtp_verify_peer'] === '1';
+                $smtpVerifyPeerName = isset($_POST['smtp_verify_peer_name']) && $_POST['smtp_verify_peer_name'] === '1';
+                $smtpAllowSelfSigned = isset($_POST['smtp_allow_self_signed']) && $_POST['smtp_allow_self_signed'] === '1';
                 $smtpPassword = $_POST['smtp_password'] ?? null;
                 $clearSmtpPassword = isset($_POST['clear_smtp_password']) && $_POST['clear_smtp_password'] === '1';
                 $sendgridKey = $_POST['sendgrid_api_key'] ?? null;
@@ -338,6 +341,9 @@ if (is_post()) {
                     'smtp_port' => $smtpPort === '' ? '587' : $smtpPort,
                     'smtp_username' => $smtpUsername,
                     'smtp_encryption' => $smtpEncryption,
+                    'smtp_verify_peer' => $smtpVerifyPeer ? '1' : '0',
+                    'smtp_verify_peer_name' => $smtpVerifyPeerName ? '1' : '0',
+                    'smtp_allow_self_signed' => $smtpAllowSelfSigned ? '1' : '0',
                     'sendgrid_region' => $sendgridRegion,
                     'turnstile_enabled' => $turnstileEnabledFlag ? '1' : '0',
                     'turnstile_site_key' => $turnstileSiteKey,
