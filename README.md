@@ -85,10 +85,12 @@ The project ships with the official `sendgrid/sendgrid` SDK. Install dependencie
 composer install
 ```
 
-Set your API key as an environment variable so it can be rotated without editing the database:
+Create a shell snippet so your API key is exported automatically in local environments:
 
 ```bash
-export SENDGRID_API_KEY="<your key>"
+echo "export SENDGRID_API_KEY='<your api key>'" > sendgrid.env
+echo "sendgrid.env" >> .gitignore
+source ./sendgrid.env
 ```
 
 If you are using the EU data residency endpoint, also export:
@@ -98,6 +100,14 @@ export SENDGRID_REGION="eu"
 ```
 
 The admin settings screen lets you persist a fallback API key/region in the database, but any environment variable will take precedence so you can swap credentials during deployments without touching production data.
+
+To verify the SDK wiring end-to-end, run the included helper script:
+
+```bash
+php bin/test_sendgrid_api.php recipient@example.com
+```
+
+The script sends a short plaintext + HTML message to the recipient passed on the command line using `SENDGRID_API_KEY`. When `SENDGRID_REGION=eu` is exported, it will automatically pin requests to the EU API and call `$sendgrid->setDataResidency('eu')`.
 
 ### SendGrid SMTP relay
 
