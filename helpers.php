@@ -578,8 +578,9 @@ function ensure_paypal_product(string $productId, string $name, string $descript
 function create_paypal_plan(string $productId, string $name, string $intervalUnit, string $currency, string $amount): string
 {
     $currencyCode = strtoupper($currency);
+    $normalizedAmount = number_format((float) $amount, 2, '.', '');
 
-    $plan = paypal_api_request('POST', 'v1/billing/plans', [
+    $planPayload = [
         'product_id' => $productId,
         'name' => $name,
         'billing_cycles' => [[
@@ -591,27 +592,30 @@ function create_paypal_plan(string $productId, string $name, string $intervalUni
             'sequence' => 1,
             'total_cycles' => 0,
             'pricing_scheme' => [
+                'version' => 1,
                 'fixed_price' => [
-                    'value' => $amount,
+                    'value' => $normalizedAmount,
                     'currency_code' => $currencyCode,
                 ],
             ],
         ]],
         'payment_preferences' => [
             'auto_bill_outstanding' => true,
-            'setup_fee' => [
-                'value' => '0',
-                'currency_code' => $currencyCode,
-            ],
             'setup_fee_failure_action' => 'CONTINUE',
-            'payment_failure_threshold' => 1,
+            'payment_failure_threshold' => 3,
         ],
-        'quantity_supported' => true,
         'taxes' => [
-            'percentage' => '0',
+            'percentage' => '0.00',
             'inclusive' => false,
         ],
-    ]);
+    ];
+
+    $planPayload['payment_preferences']['setup_fee'] = [
+        'value' => '0.00',
+        'currency_code' => $currencyCode,
+    ];
+
+    $plan = paypal_api_request('POST', 'v1/billing/plans', $planPayload);
 
     $planId = $plan['id'] ?? '';
     if ($planId === '') {
@@ -621,7 +625,9 @@ function create_paypal_plan(string $productId, string $name, string $intervalUni
     paypal_api_request('POST', 'v1/billing/plans/' . urlencode($planId) . '/activate', []);
 
     // PayPal plan activation can take a moment to propagate; poll until it is active.
-    for ($attempt = 0; $attempt < 5; $attempt++) {
+    $maxAttempts = 20;
+    $delayMicroseconds = 500000; // 0.5 seconds
+    for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
         try {
             $details = paypal_api_request('GET', 'v1/billing/plans/' . urlencode($planId));
             $status = strtoupper((string) ($details['status'] ?? ''));
@@ -635,10 +641,10 @@ function create_paypal_plan(string $productId, string $name, string $intervalUni
             }
         }
 
-        usleep(250000); // 0.25 seconds
+        usleep($delayMicroseconds);
     }
 
-    throw new RuntimeException('PayPal plan activation is taking longer than expected. Please retry in a moment.');
+    throw new RuntimeException('PayPal plan activation is taking longer than expected. Please retry in a few seconds.');
 }
 
 function prepare_paypal_subscription_plan(array $invoice, array $subscription): array
