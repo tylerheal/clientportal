@@ -1691,10 +1691,20 @@ function send_notification_email(string $to, string $subject, string $body): boo
                     $message .= ': ' . $errorBody;
                 }
 
-                $logFailure(
-                    new RuntimeException($message),
-                    $isRegionalBlock ? 'Switch to the EU region in Settings → Email delivery or export SENDGRID_REGION=eu.' : null
-                );
+                $note = null;
+                if ($isRegionalBlock) {
+                    $note = 'Switch to the EU region in Settings → Email delivery or export SENDGRID_REGION=eu.';
+                } elseif ($status === 401) {
+                    $bodyLower = strtolower($errorBody);
+                    if (strpos($bodyLower, 'authorization grant is invalid') !== false
+                        || strpos($bodyLower, 'invalid api key') !== false
+                        || strpos($bodyLower, 'unauthorized') !== false
+                    ) {
+                        $note = 'Double-check that the SendGrid API key is active and pasted correctly. Create a fresh key if necessary and update the stored credentials or SENDGRID_API_KEY environment variable.';
+                    }
+                }
+
+                $logFailure(new RuntimeException($message), $note);
                 return false;
             } catch (Throwable $sendgridError) {
                 $logFailure($sendgridError);

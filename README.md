@@ -85,6 +85,8 @@ The project ships with the official `sendgrid/sendgrid` SDK. Install dependencie
 composer install
 ```
 
+> **Security note:** Never hard-code your SendGrid key in source control or PHP files. Store it in an environment variable (preferred) or paste it into **Admin → Settings → Email delivery** so you can rotate or revoke the secret without editing the codebase.
+
 Create a shell snippet so your API key is exported automatically in local environments:
 
 ```bash
