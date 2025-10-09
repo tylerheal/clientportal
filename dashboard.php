@@ -812,13 +812,21 @@ if (is_post()) {
                             throw new RuntimeException('Subscription details were not found.');
                         }
                         $intervalUnit = strtolower((string) ($subscription['interval'] ?? 'monthly')) === 'annual' ? 'year' : 'month';
+                        $priceResponse = stripe_api_request('POST', 'v1/prices', [
+                            'currency' => strtolower($currency),
+                            'unit_amount' => to_minor_units($amount, $currency),
+                            'recurring[interval]' => $intervalUnit,
+                            'recurring[interval_count]' => 1,
+                            'product_data[name]' => $invoice['service_name'],
+                            'product_data[metadata][service_id]' => (string) $invoice['service_id'],
+                        ]);
+                        $priceId = $priceResponse['id'] ?? '';
+                        if ($priceId === '') {
+                            throw new RuntimeException('Unable to prepare the Stripe price for the subscription.');
+                        }
                         $subscriptionParams = [
                             'customer' => $customerId,
-                            'items[0][price_data][currency]' => strtolower($currency),
-                            'items[0][price_data][unit_amount]' => to_minor_units($amount, $currency),
-                            'items[0][price_data][product_data][name]' => $invoice['service_name'],
-                            'items[0][price_data][recurring][interval]' => $intervalUnit,
-                            'items[0][price_data][recurring][interval_count]' => 1,
+                            'items[0][price]' => $priceId,
                             'payment_behavior' => 'default_incomplete',
                             'metadata[invoice_id]' => (string) $invoice['id'],
                             'expand[]' => 'latest_invoice.payment_intent',

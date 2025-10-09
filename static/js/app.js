@@ -526,8 +526,13 @@
         };
 
         const resetStripe = () => {
-            if (stripeState.card && typeof stripeState.card.unmount === 'function') {
-                stripeState.card.unmount();
+            if (stripeState.card) {
+                if (typeof stripeState.card.unmount === 'function') {
+                    stripeState.card.unmount();
+                }
+                if (typeof stripeState.card.destroy === 'function') {
+                    stripeState.card.destroy();
+                }
             }
             if (stripeState.requestButton && typeof stripeState.requestButton.unmount === 'function') {
                 stripeState.requestButton.unmount();
@@ -538,6 +543,8 @@
             stripeState.clientSecret = null;
             stripeState.intentId = null;
             stripeState.subscriptionId = null;
+            stripeState.elements = null;
+            stripeState.provider = null;
             if (stripeFeedback) {
                 stripeFeedback.textContent = '';
             }
