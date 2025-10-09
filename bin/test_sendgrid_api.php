@@ -19,6 +19,7 @@ if ($apiKey === false || trim((string) $apiKey) === '') {
     fwrite(STDERR, "SENDGRID_API_KEY environment variable is not set.\n");
     exit(1);
 }
+$apiKey = trim((string) $apiKey);
 
 $fromAddress = getenv('SENDGRID_TEST_FROM') ?: 'test@example.com';
 $fromName = getenv('SENDGRID_TEST_FROM_NAME') ?: 'SendGrid Tester';
@@ -100,18 +101,53 @@ if ($isRegionalBlock && $resolvedRegion !== 'eu') {
     exit(1);
 }
 
+$headers = json_encode($response->headers(), JSON_PRETTY_PRINT);
+$body = $response->body();
 fwrite(
     STDERR,
     sprintf(
         "SendGrid API returned HTTP %d\nHeaders: %s\nBody: %s\n",
         $status,
-        json_encode($response->headers(), JSON_PRETTY_PRINT),
-        $response->body()
+        $headers,
+        $body
     )
 );
 
 if ($isRegionalBlock) {
     fwrite(STDERR, "Switch to the EU region in Settings → Email delivery or export SENDGRID_REGION=eu before retrying.\n");
+}
+
+if ($status === 401) {
+    $bodyLower = strtolower((string) $body);
+    $decoded = json_decode((string) $body, true);
+    if (
+        strpos($bodyLower, 'authorization grant is invalid') !== false
+        || strpos($bodyLower, 'invalid api key') !== false
+        || strpos($bodyLower, 'unauthorized') !== false
+    ) {
+        fwrite(
+            STDERR,
+            "SendGrid rejected the request because the API key is invalid, expired, or revoked. Create a fresh key in the SendGrid dashboard and update SENDGRID_API_KEY before retrying.\n"
+        );
+    }
+
+    if (is_array($decoded) && isset($decoded['errors']) && is_array($decoded['errors'])) {
+        foreach ($decoded['errors'] as $error) {
+            $detail = strtolower((string) ($error['message'] ?? ''));
+            if (strpos($detail, 'ip') !== false && strpos($detail, 'allowlist') !== false) {
+                fwrite(
+                    STDERR,
+                    "The response mentions an IP allowlist. Make sure this server's IP is allowlisted in SendGrid's IP Access Management settings.\n"
+                );
+            }
+            if (strpos($detail, 'permission') !== false) {
+                fwrite(
+                    STDERR,
+                    "Confirm the API key includes the Mail Send permission in the SendGrid dashboard.\n"
+                );
+            }
+        }
+    }
 }
 
 exit(1);

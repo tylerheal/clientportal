@@ -85,6 +85,8 @@ The project ships with the official `sendgrid/sendgrid` SDK. Install dependencie
 composer install
 ```
 
+> **Security note:** Never hard-code your SendGrid key in source control or PHP files. Store it in an environment variable (preferred) or paste it into **Admin → Settings → Email delivery** so you can rotate or revoke the secret without editing the codebase.
+
 Create a shell snippet so your API key is exported automatically in local environments:
 
 ```bash
@@ -99,7 +101,7 @@ If you are using the EU data residency endpoint, also export:
 export SENDGRID_REGION="eu"
 ```
 
-The admin settings screen lets you persist a fallback API key/region in the database, but any environment variable will take precedence so you can swap credentials during deployments without touching production data.
+The admin settings screen lets you persist a fallback API key/region in the database, but any environment variable will take precedence so you can swap credentials during deployments without touching production data. When troubleshooting stubborn HTTP 401 responses, double-check whether a `SENDGRID_API_KEY` environment variable is still present on the server—if it is, that value overrides the key saved in **Settings → Email delivery** until you remove or update it. Also ensure the SendGrid API key retains the **Mail Send** permission and (when IP Access Management is enabled) that the server IP is allowlisted.
 
 To verify the SDK wiring end-to-end, run the included helper script:
 
