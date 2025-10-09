@@ -1615,7 +1615,10 @@ function send_notification_email(string $to, string $subject, string $body): boo
 
     if ($transport === 'sendgrid') {
         $storedApiKey = trim((string) get_setting('sendgrid_api_key', ''));
-        $apiKey = trim((string) (getenv('SENDGRID_API_KEY') ?: $storedApiKey));
+        $envApiKey = getenv('SENDGRID_API_KEY');
+        $envApiKey = is_string($envApiKey) ? trim($envApiKey) : '';
+        $usingEnvApiKey = $envApiKey !== '';
+        $apiKey = $usingEnvApiKey ? $envApiKey : $storedApiKey;
         $storedRegion = strtolower((string) get_setting('sendgrid_region', 'us'));
         $region = strtolower((string) (getenv('SENDGRID_REGION') ?: $storedRegion));
 
@@ -1691,17 +1694,50 @@ function send_notification_email(string $to, string $subject, string $body): boo
                     $message .= ': ' . $errorBody;
                 }
 
-                $note = null;
+                $noteParts = [];
                 if ($isRegionalBlock) {
-                    $note = 'Switch to the EU region in Settings → Email delivery or export SENDGRID_REGION=eu.';
-                } elseif ($status === 401) {
+                    $noteParts[] = 'Switch to the EU region in Settings → Email delivery or export SENDGRID_REGION=eu.';
+                }
+
+                if ($status === 401) {
                     $bodyLower = strtolower($errorBody);
-                    if (strpos($bodyLower, 'authorization grant is invalid') !== false
+                    $decodedBody = null;
+                    if ($errorBody !== '') {
+                        $decoded = json_decode($errorBody, true);
+                        if (is_array($decoded)) {
+                            $decodedBody = $decoded;
+                        }
+                    }
+
+                    if (
+                        strpos($bodyLower, 'authorization grant is invalid') !== false
                         || strpos($bodyLower, 'invalid api key') !== false
                         || strpos($bodyLower, 'unauthorized') !== false
                     ) {
-                        $note = 'Double-check that the SendGrid API key is active and pasted correctly. Create a fresh key if necessary and update the stored credentials or SENDGRID_API_KEY environment variable.';
+                        $noteParts[] = 'SendGrid rejected the request because the API key is no longer valid. Rotate the key from the SendGrid dashboard and paste the fresh value into Settings → Email delivery.';
                     }
+
+                    if ($decodedBody && isset($decodedBody['errors']) && is_array($decodedBody['errors'])) {
+                        foreach ($decodedBody['errors'] as $error) {
+                            $detail = strtolower((string) ($error['message'] ?? ''));
+                            if (strpos($detail, 'ip') !== false && strpos($detail, 'allowlist') !== false) {
+                                $noteParts[] = 'If IP Access Management is enabled on your SendGrid account, allowlist the server IP or disable the restriction for this key before retrying.';
+                            }
+                            if (strpos($detail, 'permission') !== false) {
+                                $noteParts[] = 'Confirm that the API key still has the "Mail Send" permission in the SendGrid dashboard.';
+                            }
+                        }
+                    }
+
+                    if ($usingEnvApiKey) {
+                        $noteParts[] = 'A SENDGRID_API_KEY environment variable is set on the server and takes precedence over the saved key in Settings. Make sure that environment variable matches the active key or remove it before saving a new value.';
+                    }
+                }
+
+                $note = null;
+                if (!empty($noteParts)) {
+                    $noteParts = array_values(array_unique($noteParts));
+                    $note = implode(' ', $noteParts);
                 }
 
                 $logFailure(new RuntimeException($message), $note);
