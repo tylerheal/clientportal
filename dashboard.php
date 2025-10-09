@@ -1289,6 +1289,24 @@ if ($user['role'] === 'admin') {
         foreach ($backfillInvoices->fetchAll() as $invoiceRow) {
             ensure_subscription_record($pdo, $invoiceRow);
         }
+
+        $orphanedSubscriptions = $pdo->query('SELECT i.* FROM invoices i LEFT JOIN subscriptions s ON s.id = i.subscription_id WHERE i.order_id IS NOT NULL AND i.subscription_id IS NOT NULL AND s.id IS NULL');
+        foreach ($orphanedSubscriptions->fetchAll() as $invoiceRow) {
+            $pdo->prepare('UPDATE invoices SET subscription_id = NULL WHERE id = :invoice')
+                ->execute(['invoice' => (int) $invoiceRow['id']]);
+            $invoiceRow['subscription_id'] = null;
+            ensure_subscription_record($pdo, $invoiceRow);
+        }
+
+        $staleSubscriptions = $pdo->query('SELECT DISTINCT s.id FROM subscriptions s JOIN invoices i ON i.subscription_id = s.id WHERE i.status = "paid" AND s.status != "active"');
+        foreach ($staleSubscriptions->fetchAll(PDO::FETCH_COLUMN) as $subscriptionId) {
+            $pdo->prepare('UPDATE subscriptions SET status = "active", updated_at = :updated WHERE id = :id')
+                ->execute([
+                    'updated' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+                    'id' => (int) $subscriptionId,
+                ]);
+        }
+
         $subscriptionStmt = $pdo->query('SELECT s.*, u.name AS client_name, u.email, sv.name AS service_name, sv.price FROM subscriptions s JOIN users u ON u.id = s.user_id JOIN services sv ON sv.id = s.service_id WHERE s.status = "active" ORDER BY s.next_billing_at ASC');
         $subscriptionSummaries = $subscriptionStmt->fetchAll();
     }

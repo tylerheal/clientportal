@@ -971,7 +971,19 @@ function ensure_subscription_record(PDO $pdo, array $invoice): ?int
 {
     $subscriptionId = (int) ($invoice['subscription_id'] ?? 0);
     if ($subscriptionId > 0) {
-        return $subscriptionId;
+        $existing = $pdo->prepare('SELECT id FROM subscriptions WHERE id = :id LIMIT 1');
+        $existing->execute(['id' => $subscriptionId]);
+        if ((int) $existing->fetchColumn() > 0) {
+            return $subscriptionId;
+        }
+
+        $invoiceId = (int) ($invoice['id'] ?? 0);
+        if ($invoiceId > 0) {
+            $pdo->prepare('UPDATE invoices SET subscription_id = NULL WHERE id = :invoice')
+                ->execute(['invoice' => $invoiceId]);
+        }
+        $invoice['subscription_id'] = null;
+        $subscriptionId = 0;
     }
 
     $orderId = (int) ($invoice['order_id'] ?? 0);
@@ -1243,6 +1255,12 @@ function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, st
     }
 
     if ($subscriptionId > 0) {
+        $pdo->prepare('UPDATE subscriptions SET status = "active", updated_at = :updated WHERE id = :id AND status != "active"')
+            ->execute([
+                'updated' => $now,
+                'id' => $subscriptionId,
+            ]);
+
         $updates = [];
         if ($provider === 'stripe') {
             $stripeCustomer = trim((string) ($metadata['stripe_customer'] ?? ''));
