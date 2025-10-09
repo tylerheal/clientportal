@@ -183,6 +183,12 @@ a:hover {
   transition: background 0.2s ease, color 0.2s ease;
 }
 
+.sidebar-icon i {
+  color: #f4f6fb;
+  font-size: 1rem;
+  line-height: 1;
+}
+
 .nav a:hover .sidebar-icon {
   background: rgba(123, 63, 242, 0.28);
   color: #fff;
@@ -190,6 +196,11 @@ a:hover {
 
 .nav a.active .sidebar-icon {
   background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.nav a:hover .sidebar-icon i,
+.nav a.active .sidebar-icon i {
   color: #fff;
 }
 
@@ -306,6 +317,13 @@ a:hover {
 
 .search-modal__icon {
   font-size: 1.2rem;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+}
+
+.search-modal__icon i {
+  color: inherit;
 }
 
 .search-modal__field input[type="search"] {
@@ -390,12 +408,29 @@ body.has-search-open {
   background: var(--control-bg);
   color: var(--text);
   cursor: pointer;
-  font-size: 1.2rem;
   transition: border-color 0.2s ease, background 0.2s ease;
+  font-size: 1rem;
 }
 
 .iconbtn:hover {
   border-color: rgba(125, 138, 176, 0.35);
+}
+
+.iconbtn i {
+  font-size: 1.05rem;
+  color: inherit;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.iconbtn--top {
+  background: #f4f6fb;
+  border-color: #d1d5db;
+  color: #1f2937;
+}
+
+.iconbtn--top:hover {
+  border-color: #94a3b8;
 }
 
 #menuBtn {
@@ -544,6 +579,20 @@ body.has-search-open {
 .card-header p {
   margin: 0;
   color: var(--muted);
+}
+
+.card-section {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 16px;
+}
+
+.card-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .chart-card {
@@ -828,6 +877,20 @@ body.has-search-open {
   flex-wrap: wrap;
 }
 
+.table-actions form {
+  margin: 0;
+}
+
+.table-actions form,
+.table-actions form button {
+  display: inline-flex;
+}
+
+.table-actions form button {
+  min-height: 36px;
+  padding: 8px 14px;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -922,6 +985,17 @@ input.button--primary {
 .button--ghost {
   background: transparent;
   border-color: var(--border);
+}
+
+.button--danger {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+}
+
+.button--danger:hover {
+  border-color: rgba(239, 68, 68, 0.65);
+  color: #f87171;
 }
 
 .btn:disabled,

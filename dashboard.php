@@ -532,6 +532,76 @@ if (is_post()) {
                 ]);
                 flash('success', 'New admin account created.');
                 break;
+            case 'update_admin_user':
+                require_login('admin');
+                $adminId = (int) ($_POST['admin_id'] ?? 0);
+                $email = strtolower(trim($_POST['email'] ?? ''));
+                $name = trim($_POST['name'] ?? '');
+                $password = $_POST['password'] ?? '';
+
+                if ($adminId <= 0) {
+                    throw new RuntimeException('Select an administrator to update.');
+                }
+                if ($name === '' || $email === '') {
+                    throw new RuntimeException('Provide both a name and email address.');
+                }
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    throw new RuntimeException('Provide a valid email address.');
+                }
+                $target = $pdo->prepare('SELECT id FROM users WHERE id = :id AND role = :role LIMIT 1');
+                $target->execute(['id' => $adminId, 'role' => 'admin']);
+                if (!$target->fetchColumn()) {
+                    throw new RuntimeException('That administrator could not be found.');
+                }
+                $dupeCheck = $pdo->prepare('SELECT COUNT(*) FROM users WHERE email = :email AND id != :id');
+                $dupeCheck->execute(['email' => $email, 'id' => $adminId]);
+                if ((int) $dupeCheck->fetchColumn() > 0) {
+                    throw new RuntimeException('That email address is already in use.');
+                }
+                if ($password !== '' && strlen($password) < 8) {
+                    throw new RuntimeException('New passwords must be at least 8 characters.');
+                }
+
+                $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+                $fields = ['name' => $name, 'email' => $email, 'updated' => $now, 'id' => $adminId, 'role' => 'admin'];
+                $set = 'name = :name, email = :email, updated_at = :updated';
+                if ($password !== '') {
+                    $fields['password'] = password_hash($password, PASSWORD_DEFAULT);
+                    $set .= ', password_hash = :password';
+                }
+                $update = $pdo->prepare("UPDATE users SET $set WHERE id = :id AND role = :role");
+                $update->execute($fields);
+
+                if ((int) $user['id'] === $adminId) {
+                    $_SESSION['user']['name'] = $name;
+                    $_SESSION['user']['email'] = $email;
+                }
+
+                flash('success', 'Administrator updated.');
+                $redirectTarget = 'admin/administrators?edit_admin=' . $adminId;
+                break;
+            case 'delete_admin_user':
+                require_login('admin');
+                $adminId = (int) ($_POST['admin_id'] ?? 0);
+
+                if ($adminId <= 0) {
+                    throw new RuntimeException('Select an administrator to remove.');
+                }
+                if ($adminId === (int) $user['id']) {
+                    throw new RuntimeException('You cannot remove your own admin account.');
+                }
+                $totalAdmins = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin'")->fetchColumn();
+                if ($totalAdmins <= 1) {
+                    throw new RuntimeException('At least one administrator account is required.');
+                }
+                $deleted = $pdo->prepare('DELETE FROM users WHERE id = :id AND role = :role');
+                $deleted->execute(['id' => $adminId, 'role' => 'admin']);
+                if ($deleted->rowCount() === 0) {
+                    throw new RuntimeException('That administrator could not be removed.');
+                }
+                flash('success', 'Administrator removed.');
+                $redirectTarget = 'admin/administrators';
+                break;
             case 'create_order':
                 $serviceId = (int) ($_POST['service_id'] ?? 0);
                 $rawPaymentMethod = strtolower(trim($_POST['payment_method'] ?? 'manual'));
@@ -1315,6 +1385,17 @@ if ($user['role'] === 'admin') {
     $services = $pdo->query('SELECT * FROM services ORDER BY created_at DESC')->fetchAll();
     $clients = $pdo->query("SELECT id, name, email, company, created_at FROM users WHERE role = 'client' ORDER BY created_at DESC")->fetchAll();
     $admins = $pdo->query("SELECT id, name, email, created_at FROM users WHERE role = 'admin' ORDER BY created_at DESC")->fetchAll();
+    $requestedAdminId = isset($_GET['edit_admin']) ? (int) $_GET['edit_admin'] : null;
+    $editAdmin = null;
+    foreach ($admins as $adminUser) {
+        if ($requestedAdminId && (int) $adminUser['id'] === $requestedAdminId) {
+            $editAdmin = $adminUser;
+            break;
+        }
+    }
+    if ($editAdmin === null && $admins) {
+        $editAdmin = $admins[0];
+    }
     $orders = $pdo->query('SELECT o.*, s.name AS service_name, u.name AS client_name FROM orders o JOIN services s ON s.id = o.service_id JOIN users u ON u.id = o.user_id ORDER BY o.created_at DESC')->fetchAll();
     $tickets = $pdo->query('SELECT t.*, u.name AS client_name FROM tickets t JOIN users u ON u.id = t.user_id ORDER BY t.updated_at DESC')->fetchAll();
     $ticketMessages = $pdo->query('SELECT m.*, u.name FROM ticket_messages m JOIN users u ON u.id = m.user_id ORDER BY m.created_at')->fetchAll();

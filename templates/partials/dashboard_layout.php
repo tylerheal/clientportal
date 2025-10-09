@@ -35,21 +35,21 @@ $notificationsLink = is_admin($user ?? null)
     ? url_for('admin/notifications')
     : url_for('dashboard/notifications');
 $iconMap = [
-    'overview' => '🏠',
-    'orders' => '📦',
-    'tickets' => '🎫',
-    'clients' => '🧑‍🤝‍🧑',
-    'services' => '🛠️',
-    'forms' => '📝',
-    'invoices' => '🧾',
-    'payments' => '💳',
-    'automations' => '🤖',
-    'administrators' => '🛡️',
-    'settings' => '⚙️',
-    'dashboard' => '📊',
-    'service-malware-removal' => '🛡️',
-    'service-care-plans' => '🧰',
-    'service-support' => '🛎️',
+    'overview' => 'fa-solid fa-house',
+    'orders' => 'fa-solid fa-box',
+    'tickets' => 'fa-solid fa-ticket',
+    'clients' => 'fa-solid fa-user-group',
+    'services' => 'fa-solid fa-screwdriver-wrench',
+    'forms' => 'fa-regular fa-file-lines',
+    'invoices' => 'fa-solid fa-file-invoice-dollar',
+    'payments' => 'fa-solid fa-credit-card',
+    'automations' => 'fa-solid fa-robot',
+    'administrators' => 'fa-solid fa-shield-halved',
+    'settings' => 'fa-solid fa-gear',
+    'dashboard' => 'fa-solid fa-chart-line',
+    'service-malware-removal' => 'fa-solid fa-shield-virus',
+    'service-care-plans' => 'fa-solid fa-toolbox',
+    'service-support' => 'fa-solid fa-bell-concierge',
 ];
 $brandHasLogo = (bool) $logo;
 ?>
@@ -59,6 +59,7 @@ $brandHasLogo = (bool) $logo;
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= e($pageTitle); ?> · <?= e($company); ?></title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous" referrerpolicy="no-referrer">
     <link rel="stylesheet" href="<?= e(url_for('static/css/app.css')); ?>">
     <style><?= theme_styles(); ?></style>
 </head>
@@ -86,9 +87,18 @@ $brandHasLogo = (bool) $logo;
                         <?php continue; ?>
                     <?php endif; ?>
                     <?php $isActive = ($activeKey && ($item['key'] ?? '') === $activeKey) || (!empty($item['current'])); ?>
-                    <?php $icon = $item['icon'] ?? ($iconMap[$item['key'] ?? ''] ?? '⬤'); ?>
+                    <?php
+                        $iconValue = $item['icon'] ?? null;
+                        $iconClass = null;
+                        if ($iconValue && strpos($iconValue, 'fa-') !== false) {
+                            $iconClass = $iconValue;
+                        }
+                        if (!$iconClass) {
+                            $iconClass = $iconMap[$item['key'] ?? ''] ?? 'fa-solid fa-circle';
+                        }
+                    ?>
                     <a href="<?= e($item['href']); ?>" class="<?= $isActive ? 'active' : ''; ?>">
-                        <span class="sidebar-icon" aria-hidden="true"><?= e($icon); ?></span>
+                        <span class="sidebar-icon" aria-hidden="true"><i class="<?= e($iconClass); ?>"></i></span>
                         <span><?= e($item['label']); ?></span>
                     </a>
                 <?php endforeach; ?>
@@ -100,15 +110,19 @@ $brandHasLogo = (bool) $logo;
         </aside>
         <div class="main">
             <header class="topbar">
-                <button type="button" class="iconbtn" id="menuBtn" data-mobile-menu-toggle aria-label="Toggle navigation">☰</button>
+                <button type="button" class="iconbtn" id="menuBtn" data-mobile-menu-toggle aria-label="Toggle navigation">
+                    <i class="fa-solid fa-bars" aria-hidden="true"></i>
+                </button>
                 <div class="topbar-actions">
-                    <button type="button" class="iconbtn" data-search-open aria-haspopup="dialog" aria-controls="searchModal" aria-label="Search">
-                        <span aria-hidden="true">🔍</span>
+                    <button type="button" class="iconbtn iconbtn--top" data-search-open aria-haspopup="dialog" aria-controls="searchModal" aria-label="Search">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
                     </button>
-                    <button type="button" class="iconbtn" aria-label="Help">?</button>
+                    <button type="button" class="iconbtn iconbtn--top" aria-label="Help">
+                        <i class="fa-regular fa-circle-question" aria-hidden="true"></i>
+                    </button>
                     <details class="notification-details" data-notifications>
-                        <summary class="iconbtn notification-button<?= $unreadCount ? ' notification-button--active' : ''; ?>" aria-label="Notifications">
-                            <span aria-hidden="true">🔔</span>
+                        <summary class="iconbtn iconbtn--top notification-button<?= $unreadCount ? ' notification-button--active' : ''; ?>" aria-label="Notifications">
+                            <i class="fa-regular fa-bell" aria-hidden="true"></i>
                             <?php if ($unreadCount): ?>
                                 <span class="notification-count"><?= $unreadCount; ?></span>
                             <?php endif; ?>
@@ -199,12 +213,12 @@ $brandHasLogo = (bool) $logo;
                     <p class="search-modal__hint">Search for pages, services, orders, tickets, or messages.</p>
                 </div>
                 <button type="button" class="iconbtn" data-search-dismiss aria-label="Close search">
-                    <span aria-hidden="true">✕</span>
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                 </button>
             </header>
             <form action="<?= e($searchAction); ?>" method="get" class="search-modal__form" role="search">
                 <div class="search-modal__field">
-                    <span class="search-modal__icon" aria-hidden="true">🔍</span>
+                    <span class="search-modal__icon" aria-hidden="true"><i class="fa-solid fa-magnifying-glass"></i></span>
                     <input type="search" name="q" value="<?= e($_GET['q'] ?? ''); ?>" placeholder="Search…" aria-label="Search the portal" data-search-input required>
                     <input type="hidden" name="scope" value="<?= e($activeScope); ?>" data-search-scope>
                     <button type="submit" class="btn primary">Search</button>

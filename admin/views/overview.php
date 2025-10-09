@@ -94,7 +94,9 @@ $pageScripts[] = [
         <div class="toolbar">
             <div class="range">
                 <input id="dateRangeText" value="<?= e($rangeText); ?>" readonly>
-                <button class="iconbtn" type="button" id="todayBtn" title="Today" aria-label="Jump to today">📅</button>
+                <button class="iconbtn" type="button" id="todayBtn" title="Today" aria-label="Jump to today">
+                    <i class="fa-regular fa-calendar" aria-hidden="true"></i>
+                </button>
             </div>
             <div class="toolbar-actions">
                 <div class="menu" data-menu>
