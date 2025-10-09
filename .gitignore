@@ -5,3 +5,9 @@ data/
 .env
 vendor/
 *.zip
+# Common image assets should not be committed
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg

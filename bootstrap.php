@@ -5,6 +5,11 @@ if (!defined('APP_BOOTSTRAPPED')) {
     define('APP_BOOTSTRAPPED', true);
 }
 
+$autoload = __DIR__ . '/vendor/autoload.php';
+if (is_readable($autoload)) {
+    require_once $autoload;
+}
+
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start([
         'cookie_httponly' => true,
