@@ -29,6 +29,7 @@ $paypalMode = strtolower(get_setting('paypal_mode', 'sandbox')) === 'live' ? 'li
                 <input type="checkbox" name="enable_stripe"<?= $enableStripe ? ' checked' : ''; ?>>
                 <span>Enable Stripe card payments</span>
             </label>
+            <p class="hint">Recurring services are billed by creating a PaymentIntent each cycle with the saved customer and payment method. You only need Stripe’s subscription item API if you later decide to manage Stripe subscriptions directly.</p>
             <label>Publishable key
                 <input type="text" name="stripe_publishable_key" value="<?= e($stripePublishable); ?>">
             </label>

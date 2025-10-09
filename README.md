@@ -50,6 +50,8 @@ The `bin/process_billing.php` script processes subscriptions, creates new invoic
 
 Mark invoices as paid from the admin **Orders** table; doing so triggers the payment success email and clears outstanding notifications.
 
+> **Stripe subscription API note:** the portal charges recurring services by generating a new [PaymentIntent](https://docs.stripe.com/api/payment_intents) for each cycle using the saved customer and payment method. Because we do not create Stripe `subscription` or `subscription_item` objects, the requirements in [Stripe’s subscription item update docs](https://docs.stripe.com/api/subscription_items/update#update_subscription_item-price_data-recurring) do not affect the integration. If you later extend the portal to manage Stripe subscriptions directly, ensure each `price_data` payload includes the `recurring` block (`interval`, `interval_count`, etc.) as described in the documentation.
+
 ## Notifications & email
 
 - Outbound email can now use either PHP's `mail()` transport or authenticated SMTP. Configure the sender name, address, and SMTP credentials from **Admin → Settings → Email delivery**. When delivery fails (for example on a local machine without an SMTP relay) the payload is logged to `data/mail.log` so nothing is lost.
