@@ -64,7 +64,7 @@ Once credentials are saved, no manual product/plan setup is required—each chec
 
 ## Notifications & email
 
-- Outbound email can now use either PHP's `mail()` transport or authenticated SMTP. Configure the sender name, address, and SMTP credentials from **Admin → Settings → Email delivery**. When delivery fails (for example on a local machine without an SMTP relay) the payload is logged to `data/mail.log` so nothing is lost.
+- Outbound email can now use PHP's `mail()` transport, authenticated SMTP, or the SendGrid API. Configure the sender name, address, and delivery method from **Admin → Settings → Email delivery**. When delivery fails (for example on a local machine without an SMTP relay) the payload is logged to `data/mail.log` so nothing is lost.
 - To connect Microsoft 365, create an app password under **My Account → Security → Additional security verification**, then enter:
   - **Transport:** SMTP
   - **Host:** `smtp.office365.com`
@@ -75,6 +75,28 @@ Once credentials are saved, no manual product/plan setup is required—each chec
 - In-app notifications surface via the bell icon in the top bar. Clicking **Clear** (or the bell button) marks alerts as read.
 - Email templates live in the **Automations** section. You can add new templates or remove the defaults (order confirmation, ticket reply, payment success, invoice overdue).
 - To verify email delivery end-to-end: submit a new service order from the client portal, capture payment (or mark it paid from the admin orders table), reply to a support ticket, and confirm that each stage emails both the client and administrators while logging the corresponding invoices.
+
+### SendGrid email delivery
+
+The project ships with the official `sendgrid/sendgrid` SDK. Install dependencies after cloning by running:
+
+```bash
+composer install
+```
+
+Set your API key as an environment variable so it can be rotated without editing the database:
+
+```bash
+export SENDGRID_API_KEY="<your key>"
+```
+
+If you are using the EU data residency endpoint, also export:
+
+```bash
+export SENDGRID_REGION="eu"
+```
+
+The admin settings screen lets you persist a fallback API key/region in the database, but any environment variable will take precedence so you can swap credentials during deployments without touching production data.
 
 ## Styling & assets
 

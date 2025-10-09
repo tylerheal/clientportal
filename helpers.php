@@ -1603,61 +1603,48 @@ function send_notification_email(string $to, string $subject, string $body): voi
     };
 
     if ($transport === 'sendgrid') {
-        $apiKey = trim((string) get_setting('sendgrid_api_key', ''));
-        $region = strtolower((string) get_setting('sendgrid_region', 'us'));
-        $endpoint = $region === 'eu' ? 'https://api.eu.sendgrid.com/v3/mail/send' : 'https://api.sendgrid.com/v3/mail/send';
+        $storedApiKey = trim((string) get_setting('sendgrid_api_key', ''));
+        $apiKey = trim((string) (getenv('SENDGRID_API_KEY') ?: $storedApiKey));
+        $storedRegion = strtolower((string) get_setting('sendgrid_region', 'us'));
+        $region = strtolower((string) (getenv('SENDGRID_REGION') ?: $storedRegion));
 
-        if ($apiKey !== '') {
+        if ($apiKey !== '' && class_exists(\SendGrid\Mail\Mail::class)) {
             try {
-                $payload = [
-                    'personalizations' => [[
-                        'to' => [[
-                            'email' => $to,
-                        ]],
-                    ]],
-                    'from' => [
-                        'email' => $fromAddress,
-                        'name' => $fromName,
-                    ],
-                    'subject' => $subject,
-                    'content' => [[
-                        'type' => 'text/plain',
-                        'value' => $body,
-                    ]],
-                ];
+                $email = new \SendGrid\Mail\Mail();
+                $email->setFrom($fromAddress, $fromName);
+                $email->setSubject($subject);
+                $email->addTo($to);
+                $email->addContent('text/plain', $body);
 
-                $ch = curl_init($endpoint);
-                if ($ch === false) {
-                    throw new RuntimeException('Unable to initialise SendGrid request.');
+                $options = [];
+                if ($region === 'eu') {
+                    $options['host'] = 'https://api.eu.sendgrid.com';
                 }
 
-                curl_setopt_array($ch, [
-                    CURLOPT_POST => true,
-                    CURLOPT_HTTPHEADER => [
-                        'Authorization: Bearer ' . $apiKey,
-                        'Content-Type: application/json',
-                    ],
-                    CURLOPT_POSTFIELDS => json_encode($payload, JSON_THROW_ON_ERROR),
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_TIMEOUT => 10,
-                ]);
+                $sendgrid = new \SendGrid($apiKey, $options);
+                if ($region === 'eu' && method_exists($sendgrid, 'setDataResidency')) {
+                    $sendgrid->setDataResidency('eu');
+                }
 
-                $responseBody = curl_exec($ch);
-                $curlError = curl_errno($ch);
-                $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                if ($curlError === 0 && $httpCode >= 200 && $httpCode < 300) {
-                    curl_close($ch);
+                $response = $sendgrid->send($email);
+                $status = $response->statusCode();
+                if ($status >= 200 && $status < 300) {
                     return;
                 }
 
-                $errorMessage = $curlError !== 0
-                    ? curl_error($ch)
-                    : ('SendGrid API responded with HTTP ' . $httpCode . ($responseBody ? ': ' . $responseBody : ''));
-                curl_close($ch);
-                throw new RuntimeException($errorMessage);
+                $errorBody = trim((string) $response->body());
+                $message = 'SendGrid API responded with HTTP ' . $status;
+                if ($errorBody !== '') {
+                    $message .= ': ' . $errorBody;
+                }
+                throw new RuntimeException($message);
             } catch (Throwable $sendgridError) {
                 $logFailure($sendgridError);
             }
+        } elseif ($apiKey === '') {
+            $logFailure(new RuntimeException('SendGrid API key is not configured.'));
+        } elseif (!class_exists(\SendGrid\Mail\Mail::class)) {
+            $logFailure(new RuntimeException('SendGrid library is not installed.'));
         }
     }
 
