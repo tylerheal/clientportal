@@ -735,7 +735,7 @@ if (is_post()) {
                     if (($invoice['payment_method'] ?? 'paypal') !== 'paypal') {
                         throw new RuntimeException('This invoice is not configured for PayPal payments.');
                     }
-                    $result = paypal_api_request('POST', 'v2/checkout/orders/' . urlencode($paypalOrderId) . '/capture', []);
+                    $result = paypal_api_request('POST', 'v2/checkout/orders/' . urlencode($paypalOrderId) . '/capture');
                     $captures = $result['purchase_units'][0]['payments']['captures'] ?? [];
                     $captureId = null;
                     foreach ($captures as $capture) {

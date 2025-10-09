@@ -710,7 +710,7 @@
             hidePanels();
             if (providerEl) {
                 providerEl.hidden = false;
-                providerEl.textContent = 'PayPal';
+                providerEl.textContent = details.isSubscription ? 'PayPal subscription' : 'PayPal';
             }
             if (paymentIntro) {
                 paymentIntro.textContent = details.isSubscription
@@ -728,7 +728,12 @@
             waitForPayPal()
                 .then((paypal) => {
                     const buttonConfig = {
-                        style: { layout: 'vertical' },
+                        style: {
+                            layout: 'vertical',
+                            shape: 'rect',
+                            label: details.isSubscription ? 'subscribe' : 'paypal',
+                            tagline: false,
+                        },
                         onCancel: () => {
                             if (feedbackEl) {
                                 feedbackEl.textContent = 'Payment was cancelled before completion.';

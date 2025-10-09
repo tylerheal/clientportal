@@ -5,15 +5,6 @@ $currency = currency_code();
 $pageScripts = $pageScripts ?? [];
 $inlineScripts = $inlineScripts ?? [];
 
-if (!empty($availability['paypal'])) {
-    $paypalScript = sprintf(
-        'https://www.paypal.com/sdk/js?client-id=%s&currency=%s&components=buttons&intent=capture',
-        rawurlencode(get_setting('paypal_client_id', '')),
-        rawurlencode($currency)
-    );
-    $pageScripts[] = ['src' => $paypalScript];
-}
-
 if (!empty($availability['stripe'])) {
     $pageScripts[] = ['src' => 'https://js.stripe.com/v3/'];
 }
@@ -76,6 +67,25 @@ if ($serviceRecord && $serviceSlug === 'care-plans') {
 $orderIntervalValue = strtolower((string) ($serviceRecord['billing_interval'] ?? 'one_time'));
 if (!in_array($orderIntervalValue, ['monthly', 'annual'], true)) {
     $orderIntervalValue = 'one_time';
+}
+
+if (!empty($availability['paypal'])) {
+    $paypalIntent = $orderIntervalValue === 'one_time' ? 'capture' : 'subscription';
+    $params = [
+        'client-id' => get_setting('paypal_client_id', ''),
+        'currency' => $currency,
+        'components' => 'buttons',
+        'intent' => $paypalIntent,
+        'vault' => 'true',
+    ];
+    $query = [];
+    foreach ($params as $key => $value) {
+        if ($value === '') {
+            continue;
+        }
+        $query[] = $key . '=' . rawurlencode($value);
+    }
+    $pageScripts[] = ['src' => 'https://www.paypal.com/sdk/js?' . implode('&', $query)];
 }
 
 if (isset($currentDefinition['title'])) {
