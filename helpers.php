@@ -1419,7 +1419,7 @@ function find_template(PDO $pdo, string $slug): ?array
     return $cache[$slug];
 }
 
-function send_templated_email(PDO $pdo, string $slug, array $replacements, string $to, string $fallbackSubject, ?string $fallbackBody = null): void
+function send_templated_email(PDO $pdo, string $slug, array $replacements, string $to, string $fallbackSubject, ?string $fallbackBody = null): bool
 {
     $template = find_template($pdo, $slug);
     if ($template) {
@@ -1429,7 +1429,7 @@ function send_templated_email(PDO $pdo, string $slug, array $replacements, strin
         $subject = $fallbackSubject;
         $body = $fallbackBody ?? $fallbackSubject;
     }
-    send_notification_email($to, $subject, $body);
+    return send_notification_email($to, $subject, $body);
 }
 
 function random_base32(int $length = 32): string
@@ -1576,7 +1576,7 @@ function mark_notifications_read(PDO $pdo, int $userId): void
         ]);
 }
 
-function send_notification_email(string $to, string $subject, string $body): void
+function send_notification_email(string $to, string $subject, string $body): bool
 {
     $config = require __DIR__ . '/config.php';
     $defaults = $config['mail'];
@@ -1629,7 +1629,7 @@ function send_notification_email(string $to, string $subject, string $body): voi
                 $response = $sendgrid->send($email);
                 $status = $response->statusCode();
                 if ($status >= 200 && $status < 300) {
-                    return;
+                    return true;
                 }
 
                 $errorBody = trim((string) $response->body());
@@ -1640,16 +1640,16 @@ function send_notification_email(string $to, string $subject, string $body): voi
                 throw new RuntimeException($message);
             } catch (Throwable $sendgridError) {
                 $logFailure($sendgridError);
-                return;
+                return false;
             }
         } elseif ($apiKey === '') {
             $logFailure(new RuntimeException('SendGrid API key is not configured.'));
-            return;
+            return false;
         } elseif (!class_exists(\SendGrid\Mail\Mail::class)) {
             $logFailure(new RuntimeException('SendGrid library is not installed.'));
-            return;
+            return false;
         }
-        return;
+        return false;
     }
 
     if ($transport === 'smtp') {
@@ -1689,11 +1689,14 @@ function send_notification_email(string $to, string $subject, string $body): voi
                 $mailer->Body = $body;
                 $mailer->AltBody = $body;
                 $mailer->send();
-                return;
+                return true;
             } catch (\Throwable $smtpError) {
                 $logFailure($smtpError);
+                return false;
             }
         }
+        $logFailure(new RuntimeException('SMTP settings are incomplete.'));
+        return false;
     }
 
     $headers = [
@@ -1707,6 +1710,7 @@ function send_notification_email(string $to, string $subject, string $body): voi
     if (!$success) {
         $logFailure();
     }
+    return $success;
 }
 
 function parse_form_schema(?string $schema): array

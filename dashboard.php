@@ -380,6 +380,7 @@ if (is_post()) {
                 $genericSubject = sprintf('%s email test', $company);
                 $genericBody = "Hi Test User,\n\nThis is a test email from your client portal settings. If you're reading this, the connection is working.\n\nRegards,\n" . $company;
 
+                $sent = false;
                 if ($templateSlug !== '') {
                     $template = find_template($pdo, $templateSlug);
                     if (!$template) {
@@ -400,9 +401,13 @@ if (is_post()) {
                         '{{order}}' => 'PO-12345',
                     ];
 
-                    send_templated_email($pdo, $templateSlug, $replacements, $recipient, $genericSubject, $genericBody);
+                    $sent = send_templated_email($pdo, $templateSlug, $replacements, $recipient, $genericSubject, $genericBody);
                 } else {
-                    send_notification_email($recipient, $genericSubject, $genericBody);
+                    $sent = send_notification_email($recipient, $genericSubject, $genericBody);
+                }
+
+                if (!$sent) {
+                    throw new RuntimeException('The test email could not be sent. Review Settings → Email delivery and check data/mail.log for details.');
                 }
 
                 flash('success', 'Test email sent to ' . $recipient . '. Check the inbox to confirm delivery.');
