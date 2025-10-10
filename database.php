@@ -291,9 +291,8 @@ function seed_default_admin(PDO $pdo): void
     $config = require __DIR__ . '/config.php';
     $default = $config['default_admin'];
 
-    $stmt = $pdo->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
-    $stmt->execute(['email' => $default['email']]);
-    if ($stmt->fetchColumn()) {
+    $totalAdmins = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE role = 'admin'")->fetchColumn();
+    if ($totalAdmins > 0) {
         return;
     }
 
