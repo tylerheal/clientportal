@@ -171,6 +171,52 @@ a:hover {
   color: #fff;
 }
 
+.sidebar-help-card {
+  margin: 0 20px 28px;
+  padding: 20px 22px;
+  border-radius: 18px;
+  background: linear-gradient(140deg, rgba(54, 31, 126, 0.92) 0%, rgba(28, 20, 56, 0.95) 100%);
+  box-shadow: 0 20px 40px rgba(15, 11, 36, 0.32);
+  color: #f5f7ff;
+}
+
+.sidebar-help-card__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.sidebar-help-card__text {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: rgba(245, 247, 255, 0.78);
+  margin: 0;
+}
+
+.sidebar-help-card__action {
+  margin-top: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: #3b82f6;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.sidebar-help-card__action:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+}
+
+.sidebar-help-card__action i {
+  font-size: 0.9rem;
+}
+
 .sidebar-icon {
   width: 28px;
   height: 28px;
@@ -2518,6 +2564,48 @@ label {
 .mobile-sidebar .mobile-nav a:hover,
 .mobile-sidebar .mobile-nav a.active {
   color: var(--sidebar-text);
+}
+
+.mobile-help-card {
+  margin-top: auto;
+  padding: 20px;
+  border-radius: 18px;
+  background: linear-gradient(140deg, rgba(54, 31, 126, 0.92) 0%, rgba(28, 20, 56, 0.95) 100%);
+  color: #f5f7ff;
+  box-shadow: 0 20px 40px rgba(15, 11, 36, 0.32);
+  display: grid;
+  gap: 10px;
+}
+
+.mobile-help-card__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.mobile-help-card__text {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: rgba(245, 247, 255, 0.78);
+}
+
+.mobile-help-card__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: #3b82f6;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.mobile-help-card__action:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
 }
 
 .notification-details {

@@ -103,6 +103,17 @@ $brandHasLogo = (bool) $logo;
                     </a>
                 <?php endforeach; ?>
             </nav>
+            <?php
+                $helpCtaUrl = is_admin($user) ? url_for('admin/tickets') : url_for('dashboard/tickets/new');
+            ?>
+            <div class="sidebar-help-card">
+                <div class="sidebar-help-card__title">Need help?</div>
+                <p class="sidebar-help-card__text">Our team replies in under 1 hour.</p>
+                <a class="sidebar-help-card__action" href="<?= e($helpCtaUrl); ?>">
+                    <i class="fa-regular fa-paper-plane" aria-hidden="true"></i>
+                    <span>New ticket</span>
+                </a>
+            </div>
             <div class="sidebar-footer">
                 <a href="<?= e(url_for('profile')); ?>">Profile &amp; security</a>
                 <a href="<?= e(url_for('logout')); ?>">Sign out</a>
@@ -198,6 +209,14 @@ $brandHasLogo = (bool) $logo;
                     <a href="<?= e($item['href']); ?>" class="<?= $isActive ? 'active' : ''; ?>"><?= e($item['label']); ?></a>
                 <?php endforeach; ?>
             </nav>
+            <div class="mobile-help-card">
+                <div class="mobile-help-card__title">Need help?</div>
+                <p class="mobile-help-card__text">Our team replies in under 1 hour.</p>
+                <a class="mobile-help-card__action" href="<?= e($helpCtaUrl); ?>">
+                    <i class="fa-regular fa-paper-plane" aria-hidden="true"></i>
+                    <span>New ticket</span>
+                </a>
+            </div>
             <nav class="mobile-nav">
                 <a href="<?= e(url_for('profile')); ?>">Profile &amp; security</a>
                 <a href="<?= e(url_for('logout')); ?>">Sign out</a>
