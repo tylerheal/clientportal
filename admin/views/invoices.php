@@ -21,7 +21,7 @@
                 <tbody>
                     <?php foreach ($invoices as $invoice): ?>
                         <tr>
-                            <td>#<?= (int) $invoice['id']; ?></td>
+                            <td><?= e(format_invoice_number($invoice)); ?></td>
                             <td><?= e($invoice['client_name']); ?></td>
                             <td><?= e($invoice['service_name']); ?></td>
                             <td><?= e(format_datetime($invoice['due_at'])); ?></td>

@@ -35,6 +35,7 @@
                         <th>Placed</th>
                         <th>Status</th>
                         <th>Total</th>
+                        <th class="text-right">Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -45,10 +46,11 @@
                             <td><?= e(format_datetime($order['created_at'])); ?></td>
                             <td><span class="badge badge--<?= e($order['payment_status']); ?>"><?= e(ucfirst($order['payment_status'])); ?></span></td>
                             <td><?= format_currency((float) $order['total_amount']); ?></td>
+                            <td class="text-right"><a class="button button--ghost" href="<?= e(url_for('dashboard/orders/' . (int) $order['id'])); ?>">View</a></td>
                         </tr>
                     <?php endforeach; ?>
                     <?php if (!$orders): ?>
-                        <tr><td colspan="5" class="table-empty">No orders to display.</td></tr>
+                        <tr><td colspan="6" class="table-empty">No orders to display.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>
