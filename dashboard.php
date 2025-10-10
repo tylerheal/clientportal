@@ -502,9 +502,18 @@ if (is_post()) {
                     break;
                 }
 
-                $message = 'Invoice #' . ($result['invoice_id'] ?? '?') . ' generated';
+                $invoiceNumber = null;
+                $invoiceId = (int) ($result['invoice_id'] ?? 0);
+                if ($invoiceId > 0) {
+                    $invoiceLookup = $pdo->prepare('SELECT i.*, u.name AS client_name FROM invoices i JOIN users u ON u.id = i.user_id WHERE i.id = :id LIMIT 1');
+                    $invoiceLookup->execute(['id' => $invoiceId]);
+                    if ($invoiceRow = $invoiceLookup->fetch()) {
+                        $invoiceNumber = format_invoice_number($invoiceRow);
+                    }
+                }
+                $message = $invoiceNumber ? 'Invoice ' . $invoiceNumber . ' generated' : 'Invoice generated';
                 if (!empty($result['charged'])) {
-                    $provider = strtoupper((string) ($result['provider'] ?? '')); 
+                    $provider = strtoupper((string) ($result['provider'] ?? ''));
                     $message .= $provider !== '' ? ' and charged via ' . $provider . '.' : ' and charged automatically.';
                 } elseif (!empty($result['provider_managed'])) {
                     $message .= '. The external subscription will handle the payment automatically.';
@@ -741,7 +750,8 @@ if (is_post()) {
                     $subscriptionId = null;
                 }
 
-                $invoiceStmt = $pdo->prepare('INSERT INTO invoices (subscription_id, order_id, user_id, service_id, total, status, due_at, created_at, updated_at) VALUES (:subscription_id, :order_id, :user_id, :service_id, :total, :status, :due_at, :created_at, :updated_at)');
+                $invoiceSequence = next_invoice_sequence($pdo, (int) $user['id']);
+                $invoiceStmt = $pdo->prepare('INSERT INTO invoices (subscription_id, order_id, user_id, service_id, total, status, due_at, created_at, updated_at, sequence) VALUES (:subscription_id, :order_id, :user_id, :service_id, :total, :status, :due_at, :created_at, :updated_at, :sequence)');
                 $invoiceStmt->execute([
                     'subscription_id' => $subscriptionId,
                     'order_id' => $orderId,
@@ -752,6 +762,7 @@ if (is_post()) {
                     'due_at' => $now,
                     'created_at' => $now,
                     'updated_at' => $now,
+                    'sequence' => $invoiceSequence,
                 ]);
                 $invoiceId = (int) $pdo->lastInsertId();
 
@@ -826,7 +837,7 @@ if (is_post()) {
                         $value = number_format($amount, 2, '.', '');
                         $company = get_setting('company_name', 'Service Portal');
                         $brandName = function_exists('mb_substr') ? mb_substr($company, 0, 120) : substr($company, 0, 120);
-                        $description = sprintf('Invoice #%d – %s', (int) $invoice['id'], $invoice['service_name']);
+                        $description = sprintf('Invoice %s – %s', format_invoice_number($invoice), $invoice['service_name']);
                         $payload = [
                             'intent' => 'CAPTURE',
                             'purchase_units' => [[
@@ -991,7 +1002,7 @@ if (is_post()) {
                         throw new RuntimeException('Invoice total must be greater than zero.');
                     }
                     $currency = currency_code();
-                    $description = sprintf('Invoice #%d – %s', (int) $invoice['id'], $invoice['service_name']);
+                    $description = sprintf('Invoice %s – %s', format_invoice_number($invoice), $invoice['service_name']);
 
                     $customerContext = [
                         'id' => (int) $invoice['user_id'],
@@ -1198,17 +1209,51 @@ if (is_post()) {
                         $orderUser = $pdo->prepare('SELECT u.id AS user_id, u.email, u.name, s.name AS service_name, i.id AS invoice_id FROM orders o JOIN users u ON u.id = o.user_id JOIN services s ON s.id = o.service_id LEFT JOIN invoices i ON i.order_id = o.id WHERE o.id = :id LIMIT 1');
                         $orderUser->execute(['id' => $orderId]);
                         if ($row = $orderUser->fetch()) {
+                            $invoiceLabel = null;
+                            if (!empty($row['invoice_id'])) {
+                                $invoiceRefStmt = $pdo->prepare('SELECT i.*, u.name AS client_name FROM invoices i JOIN users u ON u.id = i.user_id WHERE i.id = :id LIMIT 1');
+                                $invoiceRefStmt->execute(['id' => $row['invoice_id']]);
+                                if ($invoiceRow = $invoiceRefStmt->fetch()) {
+                                    $invoiceLabel = format_invoice_number($invoiceRow);
+                                }
+                            }
+
                             $paymentReplacements = [
                                 '{{name}}' => $row['name'],
                                 '{{service}}' => $row['service_name'],
-                                '{{invoice}}' => (string) $row['invoice_id'],
+                                '{{invoice}}' => $invoiceLabel ?? 'your invoice',
                                 '{{company}}' => get_setting('company_name', 'Service Portal'),
                             ];
-                            $paymentBody = sprintf("Hi %s,\n\nWe've recorded your payment for invoice #%s covering %s.", $row['name'], $row['invoice_id'], $row['service_name']);
+                            $paymentBody = sprintf(
+                                "Hi %s,\n\nWe've recorded your payment for invoice %s covering %s.",
+                                $row['name'],
+                                $invoiceLabel ?? 'your invoice',
+                                $row['service_name']
+                            );
                             send_templated_email($pdo, 'invoice_payment_success', $paymentReplacements, $row['email'], 'Payment received', $paymentBody);
-                            record_notification($pdo, (int) $row['user_id'], 'Invoice #' . $row['invoice_id'] . ' paid successfully.', url_for('dashboard/orders'));
+
+                            if ($invoiceLabel) {
+                                record_notification($pdo, (int) $row['user_id'], 'Invoice ' . $invoiceLabel . ' paid successfully.', url_for('dashboard/orders'));
+                            } else {
+                                record_notification($pdo, (int) $row['user_id'], 'Invoice payment recorded successfully.', url_for('dashboard/orders'));
+                            }
                         }
                     }
+                    flash('success', 'Order updated.');
+                }
+                break;
+            case 'update_order_reference':
+                $orderId = (int) ($_POST['order_id'] ?? 0);
+                $reference = trim($_POST['payment_reference'] ?? '');
+                if ($orderId > 0) {
+                    $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+                    $updated = $pdo->prepare('UPDATE orders SET payment_reference = :reference, updated_at = :updated_at WHERE id = :id AND user_id = :user');
+                    $updated->execute([
+                        'reference' => $reference,
+                        'updated_at' => $now,
+                        'id' => $orderId,
+                        'user' => $user['id'],
+                    ]);
                     flash('success', 'Order updated.');
                 }
                 break;
@@ -1477,7 +1522,7 @@ if ($user['role'] === 'admin') {
             }
         }
 
-        $invoiceStmt = $pdo->prepare('SELECT id, total, status, due_at, paid_at, created_at, updated_at FROM invoices WHERE order_id = :order ORDER BY created_at ASC');
+        $invoiceStmt = $pdo->prepare('SELECT id, sequence, total, status, due_at, paid_at, created_at, updated_at FROM invoices WHERE order_id = :order ORDER BY created_at ASC');
         $invoiceStmt->execute(['order' => $selectedOrder['id']]);
         $selectedOrderInvoices = $invoiceStmt->fetchAll();
 
@@ -1494,16 +1539,20 @@ if ($user['role'] === 'admin') {
             ];
         }
         if ($selectedOrder['payment_status'] !== 'pending') {
+            $referenceSummary = $selectedOrder['payment_reference']
+                ? 'Reference ' . abbreviate_reference((string) $selectedOrder['payment_reference'])
+                : 'Status manually updated';
             $selectedOrderTimeline[] = [
                 'title' => 'Payment status: ' . ucfirst($selectedOrder['payment_status']),
-                'description' => $selectedOrder['payment_reference'] ? 'Reference ' . $selectedOrder['payment_reference'] : 'Status manually updated',
+                'description' => $referenceSummary,
                 'timestamp' => $selectedOrder['updated_at'] ?: $selectedOrder['created_at'],
             ];
         }
         foreach ($selectedOrderInvoices as $invoice) {
             $invoiceTimestamp = $invoice['paid_at'] ?: $invoice['created_at'];
+            $invoiceNumber = format_invoice_number($invoice + ['client_name' => $selectedOrder['client_name'] ?? '']);
             $selectedOrderTimeline[] = [
-                'title' => 'Invoice #' . $invoice['id'] . ' ' . ($invoice['status'] === 'paid' ? 'paid' : 'issued'),
+                'title' => 'Invoice ' . $invoiceNumber . ' ' . ($invoice['status'] === 'paid' ? 'paid' : 'issued'),
                 'description' => 'Total ' . format_currency((float) $invoice['total']),
                 'timestamp' => $invoiceTimestamp,
             ];
@@ -1590,7 +1639,96 @@ foreach ($messagesStmt->fetchAll() as $message) {
     $messagesByTicket[$message['ticket_id']][] = $message;
 }
 
-$clientViews = ['overview', 'notifications', 'services', 'service', 'forms', 'orders', 'invoices', 'tickets', 'ticket'];
+$clientSelectedOrder = null;
+$clientSelectedOrderFormEntries = [];
+$clientSelectedOrderInvoices = [];
+$clientSelectedOrderTimeline = [];
+
+if ($view === 'order') {
+    if ($orderDetailId <= 0) {
+        redirect('dashboard/orders');
+    }
+
+    $orderStmt = $pdo->prepare('SELECT o.*, s.name AS service_name FROM orders o JOIN services s ON s.id = o.service_id WHERE o.id = :id AND o.user_id = :user LIMIT 1');
+    $orderStmt->execute(['id' => $orderDetailId, 'user' => $user['id']]);
+    $clientSelectedOrder = $orderStmt->fetch();
+
+    if (!$clientSelectedOrder) {
+        flash('error', 'That order could not be found.');
+        redirect('dashboard/orders');
+    }
+
+    if (!empty($clientSelectedOrder['form_data'])) {
+        try {
+            $decoded = json_decode($clientSelectedOrder['form_data'], true, 512, JSON_THROW_ON_ERROR);
+            if (is_array($decoded)) {
+                foreach ($decoded as $fieldKey => $fieldValue) {
+                    $label = ucwords(str_replace(['_', '-'], ' ', (string) $fieldKey));
+                    if (is_array($fieldValue)) {
+                        $value = implode(', ', array_map(static function ($item) {
+                            return is_scalar($item) ? (string) $item : '';
+                        }, $fieldValue));
+                    } elseif (is_bool($fieldValue)) {
+                        $value = $fieldValue ? 'Yes' : 'No';
+                    } elseif (is_scalar($fieldValue)) {
+                        $value = (string) $fieldValue;
+                    } else {
+                        $value = '';
+                    }
+
+                    $clientSelectedOrderFormEntries[] = [
+                        'label' => $label,
+                        'value' => trim($value),
+                    ];
+                }
+            }
+        } catch (Throwable $exception) {
+            $clientSelectedOrderFormEntries = [];
+        }
+    }
+
+    $invoiceStmt = $pdo->prepare('SELECT id, sequence, total, status, due_at, paid_at, created_at, updated_at FROM invoices WHERE order_id = :order ORDER BY created_at ASC');
+    $invoiceStmt->execute(['order' => $clientSelectedOrder['id']]);
+    $clientSelectedOrderInvoices = $invoiceStmt->fetchAll();
+
+    $clientSelectedOrderTimeline[] = [
+        'title' => 'Order placed',
+        'description' => 'Order submitted for ' . $clientSelectedOrder['service_name'],
+        'timestamp' => $clientSelectedOrder['created_at'],
+    ];
+
+    if ($clientSelectedOrder['updated_at'] && $clientSelectedOrder['updated_at'] !== $clientSelectedOrder['created_at']) {
+        $clientSelectedOrderTimeline[] = [
+            'title' => 'Order updated',
+            'description' => 'Details were updated',
+            'timestamp' => $clientSelectedOrder['updated_at'],
+        ];
+    }
+
+    if ($clientSelectedOrder['payment_status'] !== 'pending') {
+        $clientSelectedOrderTimeline[] = [
+            'title' => 'Payment status: ' . ucfirst($clientSelectedOrder['payment_status']),
+            'description' => $clientSelectedOrder['payment_reference'] ? 'Reference ' . abbreviate_reference((string) $clientSelectedOrder['payment_reference']) : 'Status updated',
+            'timestamp' => $clientSelectedOrder['updated_at'] ?: $clientSelectedOrder['created_at'],
+        ];
+    }
+
+    foreach ($clientSelectedOrderInvoices as $invoice) {
+        $invoiceTimestamp = $invoice['paid_at'] ?: $invoice['created_at'];
+        $invoiceNumber = format_invoice_number($invoice + ['client_name' => $user['name'] ?? '']);
+        $clientSelectedOrderTimeline[] = [
+            'title' => 'Invoice ' . $invoiceNumber . ' ' . ($invoice['status'] === 'paid' ? 'paid' : 'issued'),
+            'description' => 'Total ' . format_currency((float) $invoice['total']),
+            'timestamp' => $invoiceTimestamp,
+        ];
+    }
+
+    usort($clientSelectedOrderTimeline, static function (array $a, array $b): int {
+        return strcmp((string) ($a['timestamp'] ?? ''), (string) ($b['timestamp'] ?? ''));
+    });
+}
+
+$clientViews = ['overview', 'notifications', 'services', 'service', 'forms', 'orders', 'order', 'invoices', 'tickets', 'ticket'];
 if (!in_array($view, $clientViews, true)) {
     $view = 'overview';
 }
@@ -1649,11 +1787,19 @@ if ($view === 'ticket') {
         $pageTitle = 'Ticket #' . $selectedTicket['id'];
     }
 }
+if ($view === 'order') {
+    if ($clientSelectedOrder) {
+        $pageTitle = 'Order #' . (int) $clientSelectedOrder['id'];
+    } else {
+        $pageTitle = 'Orders';
+    }
+}
 
 $activeKey = $view === 'ticket' ? 'tickets' : $view;
 if ($view === 'service' && $serviceSlug) {
     $activeKey = 'service-' . $serviceSlug;
 }
+$activeKey = $view === 'order' ? 'orders' : $activeKey;
 $serviceSlug = $serviceSlug ?? 'malware-removal';
 $clientView = $view;
 $searchAction = $view === 'overview'

@@ -1309,6 +1309,55 @@
         });
     }
 
+    const copyToClipboard = async (text) => {
+        if (!text) {
+            return false;
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            try {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } catch (error) {
+                console.warn('Clipboard write failed', error);
+            }
+        }
+        const textarea = doc.createElement('textarea');
+        textarea.value = text;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'absolute';
+        textarea.style.left = '-9999px';
+        doc.body.appendChild(textarea);
+        textarea.select();
+        let succeeded = false;
+        try {
+            succeeded = doc.execCommand('copy');
+        } catch (error) {
+            succeeded = false;
+        }
+        textarea.remove();
+        return succeeded;
+    };
+
+    const copyTriggers = Array.from(doc.querySelectorAll('[data-copy-text]'));
+    if (copyTriggers.length) {
+        copyTriggers.forEach((trigger) => {
+            const originalLabel = trigger.getAttribute('aria-label') || 'Copy to clipboard';
+            trigger.addEventListener('click', async (event) => {
+                event.preventDefault();
+                const text = trigger.getAttribute('data-copy-text');
+                const success = await copyToClipboard(text || '');
+                trigger.classList.toggle('is-copied', success);
+                if (success) {
+                    trigger.setAttribute('aria-label', 'Copied to clipboard');
+                    window.setTimeout(() => {
+                        trigger.classList.remove('is-copied');
+                        trigger.setAttribute('aria-label', originalLabel);
+                    }, 2000);
+                }
+            });
+        });
+    }
+
     bootstrapChart();
 
     window.PortalDashboard = {

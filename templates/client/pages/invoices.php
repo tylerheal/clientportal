@@ -55,7 +55,7 @@ $paymentReady = !empty($availability['paypal']) || !empty($availability['stripe'
                 <tbody>
                     <?php foreach ($invoices as $invoice): ?>
                         <tr data-invoice-row="<?= (int) $invoice['id']; ?>">
-                            <td>#<?= (int) $invoice['id']; ?></td>
+                            <td><?= e(format_invoice_number($invoice + ['client_name' => $user['name'] ?? ''])); ?></td>
                             <td><?= e($invoice['service_name']); ?></td>
                             <td><?= e(format_datetime($invoice['due_at'])); ?></td>
                             <td><span class="badge badge--<?= e($invoice['status']); ?>" data-invoice-status="<?= (int) $invoice['id']; ?>"><?= e(ucfirst($invoice['status'])); ?></span></td>

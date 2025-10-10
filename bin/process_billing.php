@@ -21,13 +21,14 @@ foreach ($pending->fetchAll() as $invoice) {
             'updated' => $now->format(DateTimeInterface::ATOM),
             'id' => $invoice['id'],
         ]);
+    $invoiceNumber = format_invoice_number($invoice);
     $overdueReplacements = [
         '{{name}}' => $invoice['name'],
         '{{service}}' => $invoice['service_name'],
-        '{{invoice}}' => (string) $invoice['id'],
+        '{{invoice}}' => $invoiceNumber,
         '{{company}}' => get_setting('company_name', 'Service Portal'),
     ];
-    $overdueBody = sprintf("Hi %s,\n\nInvoice #%s for %s is overdue. Please arrange payment at your earliest convenience.", $invoice['name'], $invoice['id'], $invoice['service_name']);
+    $overdueBody = sprintf("Hi %s,\n\nInvoice %s for %s is overdue. Please arrange payment at your earliest convenience.", $invoice['name'], $invoiceNumber, $invoice['service_name']);
     send_templated_email($pdo, 'invoice_overdue', $overdueReplacements, $invoice['email'], 'Invoice overdue', $overdueBody);
-    record_notification($pdo, (int) $invoice['user_id'], 'Invoice #' . $invoice['id'] . ' is overdue', url_for('dashboard#invoices'));
+    record_notification($pdo, (int) $invoice['user_id'], 'Invoice ' . $invoiceNumber . ' is overdue', url_for('dashboard#invoices'));
 }

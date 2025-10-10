@@ -856,17 +856,24 @@ function process_subscription_cycle(PDO $pdo, array $subscription, \DateTimeImmu
     $intervalSpec = $interval === 'annual' ? '+1 year' : '+1 month';
     $dueAt = $now;
 
-    $pdo->prepare('INSERT INTO invoices (subscription_id, order_id, user_id, service_id, total, status, due_at, created_at, updated_at) VALUES (:subscription_id, :order_id, :user_id, :service_id, :total, :status, :due_at, :created_at, :updated_at)')
+    $userId = (int) ($subscription['user_id'] ?? 0);
+    if ($userId <= 0) {
+        throw new RuntimeException('Subscriptions require an associated client before invoicing.');
+    }
+    $sequence = next_invoice_sequence($pdo, $userId);
+
+    $pdo->prepare('INSERT INTO invoices (subscription_id, order_id, user_id, service_id, total, status, due_at, created_at, updated_at, sequence) VALUES (:subscription_id, :order_id, :user_id, :service_id, :total, :status, :due_at, :created_at, :updated_at, :sequence)')
         ->execute([
             'subscription_id' => $subscriptionId,
             'order_id' => $subscription['order_id'] ?? null,
-            'user_id' => $subscription['user_id'] ?? null,
+            'user_id' => $userId,
             'service_id' => $subscription['service_id'] ?? null,
             'total' => $amount,
             'status' => 'pending',
             'due_at' => $dueAt->format(\DateTimeInterface::ATOM),
             'created_at' => $dueAt->format(\DateTimeInterface::ATOM),
             'updated_at' => $dueAt->format(\DateTimeInterface::ATOM),
+            'sequence' => $sequence,
         ]);
 
     $invoiceId = (int) $pdo->lastInsertId();
@@ -884,25 +891,26 @@ function process_subscription_cycle(PDO $pdo, array $subscription, \DateTimeImmu
     $invoice = $invoiceStmt->fetch();
 
     if ($invoice) {
+        $invoiceNumber = format_invoice_number($invoice);
         $replacements = [
             '{{name}}' => $invoice['name'],
             '{{service}}' => $invoice['service_name'],
-            '{{invoice}}' => (string) $invoiceId,
+            '{{invoice}}' => $invoiceNumber,
             '{{amount}}' => format_currency($amount),
             '{{due_date}}' => $dueAt->format('j M Y'),
             '{{company}}' => get_setting('company_name', 'Service Portal'),
         ];
         $body = sprintf(
-            "Hi %s,\n\nWe've raised invoice #%s for %s. The total due is %s and it is payable by %s.",
+            "Hi %s,\n\nWe've raised invoice %s for %s. The total due is %s and it is payable by %s.",
             $invoice['name'],
-            $invoiceId,
+            $invoiceNumber,
             $invoice['service_name'],
             format_currency($amount),
             $dueAt->format('j M Y')
         );
         send_templated_email($pdo, 'invoice_created', $replacements, $invoice['email'], 'New invoice issued', $body);
-        record_notification($pdo, (int) $subscription['user_id'], 'Invoice #' . $invoiceId . ' generated for ' . $invoice['service_name'], url_for('dashboard#invoices'));
-        notify_admins($pdo, 'Invoice #' . $invoiceId . ' generated for ' . $invoice['service_name'], url_for('admin/orders'));
+        record_notification($pdo, (int) $subscription['user_id'], 'Invoice ' . $invoiceNumber . ' generated for ' . $invoice['service_name'], url_for('dashboard#invoices'));
+        notify_admins($pdo, 'Invoice ' . $invoiceNumber . ' generated for ' . $invoice['service_name'], url_for('admin/orders'));
     }
 
     $result = [
@@ -954,9 +962,10 @@ function process_subscription_cycle(PDO $pdo, array $subscription, \DateTimeImmu
                 $result['reference'] = $intentId;
             }
         } catch (Throwable $e) {
-            $message = 'Automatic payment failed for invoice #' . $invoiceId . ': ' . $e->getMessage();
+            $invoiceNumber = format_invoice_number($invoice);
+            $message = 'Automatic payment failed for invoice ' . $invoiceNumber . ': ' . $e->getMessage();
             error_log($message);
-            record_notification($pdo, (int) $subscription['user_id'], 'Automatic payment failed for invoice #' . $invoiceId . '. Please review the invoice to pay manually.', url_for('dashboard#invoices'));
+            record_notification($pdo, (int) $subscription['user_id'], 'Automatic payment failed for invoice ' . $invoiceNumber . '. Please review the invoice to pay manually.', url_for('dashboard#invoices'));
             notify_admins($pdo, $message, url_for('admin/orders'));
         }
     }
@@ -1295,17 +1304,18 @@ function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, st
         }
     }
 
+    $invoiceNumber = format_invoice_number($invoice);
     $replacements = [
         '{{name}}' => $clientName !== '' ? $clientName : 'there',
         '{{service}}' => $serviceName,
-        '{{invoice}}' => (string) $invoiceId,
+        '{{invoice}}' => $invoiceNumber,
         '{{company}}' => get_setting('company_name', 'Service Portal'),
     ];
 
     $body = sprintf(
-        "Hi %s,\n\nWe've recorded your payment for invoice #%s covering %s.",
+        "Hi %s,\n\nWe've recorded your payment for invoice %s covering %s.",
         $clientName !== '' ? $clientName : 'there',
-        $invoiceId,
+        $invoiceNumber,
         $serviceName
     );
 
@@ -1313,7 +1323,72 @@ function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, st
         send_templated_email($pdo, 'invoice_payment_success', $replacements, $clientEmail, 'Payment received', $body);
     }
 
-    record_notification($pdo, $userId, 'Invoice #' . $invoiceId . ' paid successfully.', url_for('dashboard/orders'));
+    record_notification($pdo, $userId, 'Invoice ' . $invoiceNumber . ' paid successfully.', url_for('dashboard/orders'));
+}
+
+function abbreviate_reference(string $value, int $visibleStart = 8, int $visibleEnd = 4): string
+{
+    $value = trim($value);
+    if ($value === '') {
+        return '';
+    }
+
+    $length = function_exists('mb_strlen') ? mb_strlen($value) : strlen($value);
+    if ($length <= $visibleStart + $visibleEnd + 1) {
+        return $value;
+    }
+
+    $start = function_exists('mb_substr') ? mb_substr($value, 0, $visibleStart) : substr($value, 0, $visibleStart);
+    $end = function_exists('mb_substr') ? mb_substr($value, -$visibleEnd) : substr($value, -$visibleEnd);
+    return $start . '…' . $end;
+}
+
+function next_invoice_sequence(PDO $pdo, int $userId): int
+{
+    if ($userId <= 0) {
+        return 1;
+    }
+    $stmt = $pdo->prepare('SELECT COALESCE(MAX(sequence), 0) FROM invoices WHERE user_id = :user');
+    $stmt->execute(['user' => $userId]);
+    $max = (int) $stmt->fetchColumn();
+    return $max + 1;
+}
+
+function invoice_initials(string $name): string
+{
+    $name = trim(preg_replace('/\s+/', ' ', $name));
+    if ($name === '') {
+        return 'XX';
+    }
+    $parts = preg_split('/\s+/u', $name) ?: [];
+    if (count($parts) >= 2) {
+        $firstChunk = function_exists('mb_substr') ? mb_substr($parts[0], 0, 1) : substr($parts[0], 0, 1);
+        $lastChunk = function_exists('mb_substr') ? mb_substr($parts[count($parts) - 1], 0, 1) : substr($parts[count($parts) - 1], 0, 1);
+        $first = function_exists('mb_strtoupper') ? mb_strtoupper($firstChunk) : strtoupper($firstChunk);
+        $last = function_exists('mb_strtoupper') ? mb_strtoupper($lastChunk) : strtoupper($lastChunk);
+        $initials = $first . $last;
+    } else {
+        $segment = $parts[0];
+        $slice = function_exists('mb_substr') ? mb_substr($segment, 0, 2) : substr($segment, 0, 2);
+        $initials = function_exists('mb_strtoupper') ? mb_strtoupper($slice) : strtoupper($slice);
+        $initialLength = function_exists('mb_strlen') ? mb_strlen($initials) : strlen($initials);
+        if ($initialLength < 2) {
+            $initials = str_pad($initials, 2, 'X');
+        }
+    }
+    return str_pad($initials, 2, 'X');
+}
+
+function format_invoice_number(array $invoice): string
+{
+    $sequence = (int) ($invoice['sequence'] ?? 0);
+    if ($sequence <= 0) {
+        $sequence = max(1, (int) ($invoice['id'] ?? 0));
+    }
+    $clientName = $invoice['client_name'] ?? ($invoice['name'] ?? '');
+    $initials = invoice_initials((string) $clientName);
+    $number = str_pad((string) $sequence, 3, '0', STR_PAD_LEFT);
+    return sprintf('INV-%s-%s', $initials, $number);
 }
 
 function theme_styles(): string

@@ -157,6 +157,7 @@ function initialise_schema(PDO $pdo): void
     )');
 
     ensure_nullable_invoice_subscription($pdo);
+    ensure_invoice_sequence_column($pdo);
     ensure_user_payment_columns($pdo);
     ensure_subscription_payment_columns($pdo);
     ensure_service_payment_metadata($pdo);
@@ -176,6 +177,7 @@ function initialise_schema(PDO $pdo): void
     seed_default_admin($pdo);
     seed_default_settings($pdo);
     seed_default_templates($pdo);
+    ensure_invoice_template_format($pdo);
 }
 
 function ensure_nullable_invoice_subscription(PDO $pdo): void
@@ -375,20 +377,20 @@ function seed_default_templates(PDO $pdo): void
         [
             'slug' => 'invoice_payment_success',
             'name' => 'Invoice payment success',
-            'subject' => 'Payment received – Invoice #{{invoice}}',
-            'body' => "Hi {{name}},\n\nWe've received your payment for invoice #{{invoice}} covering {{service}}. Thank you!\n\nRegards,\n{{company}}",
+            'subject' => 'Payment received – Invoice {{invoice}}',
+            'body' => "Hi {{name}},\n\nWe've received your payment for invoice {{invoice}} covering {{service}}. Thank you!\n\nRegards,\n{{company}}",
         ],
         [
             'slug' => 'invoice_created',
             'name' => 'Invoice created',
-            'subject' => 'Invoice #{{invoice}} for {{service}}',
-            'body' => "Hi {{name}},\n\nWe've raised invoice #{{invoice}} for {{service}}. The total due is {{amount}} and it is payable by {{due_date}}.\n\nRegards,\n{{company}}",
+            'subject' => 'Invoice {{invoice}} for {{service}}',
+            'body' => "Hi {{name}},\n\nWe've raised invoice {{invoice}} for {{service}}. The total due is {{amount}} and it is payable by {{due_date}}.\n\nRegards,\n{{company}}",
         ],
         [
             'slug' => 'invoice_overdue',
             'name' => 'Invoice overdue',
-            'subject' => 'Payment overdue – Invoice #{{invoice}}',
-            'body' => "Hi {{name}},\n\nInvoice #{{invoice}} for {{service}} is now overdue. Please complete payment as soon as possible.\n\nRegards,\n{{company}}",
+            'subject' => 'Payment overdue – Invoice {{invoice}}',
+            'body' => "Hi {{name}},\n\nInvoice {{invoice}} for {{service}} is now overdue. Please complete payment as soon as possible.\n\nRegards,\n{{company}}",
         ],
     ];
 
@@ -402,5 +404,113 @@ function seed_default_templates(PDO $pdo): void
             'created_at' => $now,
             'updated_at' => $now,
         ]);
+    }
+}
+
+function ensure_invoice_sequence_column(PDO $pdo): void
+{
+    $columns = $pdo->query('PRAGMA table_info(invoices)');
+    $schema = $columns ? $columns->fetchAll(PDO::FETCH_ASSOC) : [];
+    $hasSequence = false;
+    foreach ($schema as $column) {
+        if (($column['name'] ?? '') === 'sequence') {
+            $hasSequence = true;
+            break;
+        }
+    }
+
+    if (!$hasSequence) {
+        $pdo->exec('ALTER TABLE invoices ADD COLUMN sequence INTEGER');
+    }
+
+    $needsBackfillStmt = $pdo->query('SELECT COUNT(*) FROM invoices WHERE sequence IS NULL OR sequence <= 0');
+    $needsBackfill = (int) ($needsBackfillStmt ? $needsBackfillStmt->fetchColumn() : 0);
+    if ($needsBackfill === 0) {
+        return;
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $rows = $pdo->query('SELECT id, user_id, created_at FROM invoices ORDER BY user_id, created_at, id');
+        $records = $rows ? $rows->fetchAll(PDO::FETCH_ASSOC) : [];
+        $update = $pdo->prepare('UPDATE invoices SET sequence = :sequence WHERE id = :id');
+        $currentUser = null;
+        $currentSequence = 0;
+        foreach ($records as $row) {
+            $userId = (int) ($row['user_id'] ?? 0);
+            if ($currentUser === null || $userId !== $currentUser) {
+                $currentUser = $userId;
+                $currentSequence = 0;
+            }
+            $currentSequence++;
+            $update->execute([
+                'sequence' => $currentSequence,
+                'id' => (int) $row['id'],
+            ]);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+function ensure_invoice_template_format(PDO $pdo): void
+{
+    $templates = [
+        'invoice_payment_success' => [
+            'subject' => ['Payment received – Invoice #{{invoice}}', 'Payment received – Invoice {{invoice}}'],
+            'body' => [
+                "Hi {{name}},\n\nWe've received your payment for invoice #{{invoice}} covering {{service}}. Thank you!\n\nRegards,\n{{company}}",
+                "Hi {{name}},\n\nWe've received your payment for invoice {{invoice}} covering {{service}}. Thank you!\n\nRegards,\n{{company}}",
+            ],
+        ],
+        'invoice_created' => [
+            'subject' => ['Invoice #{{invoice}} for {{service}}', 'Invoice {{invoice}} for {{service}}'],
+            'body' => [
+                "Hi {{name}},\n\nWe've raised invoice #{{invoice}} for {{service}}. The total due is {{amount}} and it is payable by {{due_date}}.\n\nRegards,\n{{company}}",
+                "Hi {{name}},\n\nWe've raised invoice {{invoice}} for {{service}}. The total due is {{amount}} and it is payable by {{due_date}}.\n\nRegards,\n{{company}}",
+            ],
+        ],
+        'invoice_overdue' => [
+            'subject' => ['Payment overdue – Invoice #{{invoice}}', 'Payment overdue – Invoice {{invoice}}'],
+            'body' => [
+                "Hi {{name}},\n\nInvoice #{{invoice}} for {{service}} is now overdue. Please complete payment as soon as possible.\n\nRegards,\n{{company}}",
+                "Hi {{name}},\n\nInvoice {{invoice}} for {{service}} is now overdue. Please complete payment as soon as possible.\n\nRegards,\n{{company}}",
+            ],
+        ],
+    ];
+
+    $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+    foreach ($templates as $slug => $template) {
+        $stmt = $pdo->prepare('SELECT subject, body FROM email_templates WHERE slug = :slug LIMIT 1');
+        $stmt->execute(['slug' => $slug]);
+        if ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $updates = [];
+            if (($row['subject'] ?? '') === $template['subject'][0]) {
+                $updates['subject'] = $template['subject'][1];
+            }
+            if (($row['body'] ?? '') === $template['body'][0]) {
+                $updates['body'] = $template['body'][1];
+            }
+            if ($updates) {
+                $updates['updated_at'] = $now;
+                $updates['slug'] = $slug;
+                $sets = [];
+                foreach (array_keys($updates) as $key) {
+                    if ($key === 'slug') {
+                        continue;
+                    }
+                    $sets[] = $key . ' = :' . $key;
+                }
+                if ($sets) {
+                    $updatesSql = 'UPDATE email_templates SET ' . implode(', ', $sets) . ' WHERE slug = :slug';
+                    $updateStmt = $pdo->prepare($updatesSql);
+                    $updateStmt->execute($updates);
+                }
+            }
+        }
     }
 }
