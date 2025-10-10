@@ -21,7 +21,7 @@ $adminSidebar = [
     ['key' => 'settings', 'label' => 'Settings', 'href' => url_for('admin/settings')],
 ];
 
-$activeKey = $view === 'ticket' ? 'tickets' : $view;
+$activeKey = $view === 'ticket' ? 'tickets' : ($view === 'order' ? 'orders' : $view);
 $pageTitleMap = [
     'overview' => 'Admin overview',
     'services' => 'Services',
@@ -31,6 +31,7 @@ $pageTitleMap = [
     'invoices' => 'Invoices',
     'tickets' => 'Tickets',
     'ticket' => 'Ticket detail',
+    'order' => 'Order detail',
     'clients' => 'Clients',
     'automations' => 'Automations',
     'payments' => 'Payments',
@@ -40,6 +41,9 @@ $pageTitleMap = [
 $pageTitle = $pageTitleMap[$view] ?? 'Admin overview';
 if ($view === 'ticket' && isset($selectedTicket['id'])) {
     $pageTitle = 'Ticket #' . $selectedTicket['id'];
+}
+if ($view === 'order' && isset($selectedOrder['id'])) {
+    $pageTitle = 'Order #' . $selectedOrder['id'];
 }
 $sidebar = $adminSidebar;
 
@@ -53,6 +57,9 @@ switch ($view) {
         break;
     case 'orders':
         include __DIR__ . '/views/orders.php';
+        break;
+    case 'order':
+        include __DIR__ . '/views/order_detail.php';
         break;
     case 'notifications':
         include __DIR__ . '/views/notifications.php';

@@ -43,6 +43,7 @@ if ($isAdminRoute && $userRole !== 'admin') {
 $resourceSegment = $segments[1] ?? null;
 $resourceId = (int) ($_GET['resource_id'] ?? (ctype_digit((string) $resourceSegment) ? $resourceSegment : 0));
 $ticketDetailId = null;
+$orderDetailId = null;
 $creatingTicket = false;
 if ($view === 'tickets') {
     if ($resourceSegment === 'new') {
@@ -52,6 +53,15 @@ if ($view === 'tickets') {
         $view = 'ticket';
         $ticketDetailId = $resourceId;
     }
+}
+
+if ($view === 'orders' && $resourceId > 0) {
+    $view = 'order';
+    $orderDetailId = $resourceId;
+}
+
+if ($view === 'order' && !$orderDetailId && $resourceId > 0) {
+    $orderDetailId = $resourceId;
 }
 
 if ($view === 'services') {
@@ -1405,7 +1415,7 @@ $notifications = get_notifications($pdo, (int) $user['id']);
 $unreadNotifications = array_filter($notifications, fn($notification) => empty($notification['read_at']));
 
 if ($user['role'] === 'admin') {
-    $adminViews = ['overview', 'notifications', 'services', 'orders', 'invoices', 'tickets', 'ticket', 'clients', 'automations', 'payments', 'administrators', 'forms', 'settings'];
+    $adminViews = ['overview', 'notifications', 'services', 'orders', 'order', 'invoices', 'tickets', 'ticket', 'clients', 'automations', 'payments', 'administrators', 'forms', 'settings'];
     if (!in_array($view, $adminViews, true)) {
         $view = 'overview';
     }
@@ -1425,6 +1435,84 @@ if ($user['role'] === 'admin') {
         $editAdmin = $admins[0];
     }
     $orders = $pdo->query('SELECT o.*, s.name AS service_name, u.name AS client_name FROM orders o JOIN services s ON s.id = o.service_id JOIN users u ON u.id = o.user_id ORDER BY o.created_at DESC')->fetchAll();
+    $selectedOrder = null;
+    $selectedOrderFormEntries = [];
+    $selectedOrderInvoices = [];
+    $selectedOrderTimeline = [];
+    if ($view === 'order' && $orderDetailId) {
+        $orderStmt = $pdo->prepare('SELECT o.*, s.name AS service_name, u.name AS client_name, u.email AS client_email, u.company AS client_company FROM orders o JOIN services s ON s.id = o.service_id JOIN users u ON u.id = o.user_id WHERE o.id = :id LIMIT 1');
+        $orderStmt->execute(['id' => $orderDetailId]);
+        $selectedOrder = $orderStmt->fetch();
+        if (!$selectedOrder) {
+            flash('error', 'That order could not be found.');
+            redirect('admin/orders');
+        }
+
+        if (!empty($selectedOrder['form_data'])) {
+            try {
+                $decoded = json_decode($selectedOrder['form_data'], true, 512, JSON_THROW_ON_ERROR);
+                if (is_array($decoded)) {
+                    foreach ($decoded as $fieldKey => $fieldValue) {
+                        $label = ucwords(str_replace(['_', '-'], ' ', (string) $fieldKey));
+                        if (is_array($fieldValue)) {
+                            $value = implode(', ', array_map(static function ($item) {
+                                return is_scalar($item) ? (string) $item : '';
+                            }, $fieldValue));
+                        } elseif (is_bool($fieldValue)) {
+                            $value = $fieldValue ? 'Yes' : 'No';
+                        } elseif (is_scalar($fieldValue)) {
+                            $value = (string) $fieldValue;
+                        } else {
+                            $value = '';
+                        }
+
+                        $selectedOrderFormEntries[] = [
+                            'label' => $label,
+                            'value' => trim($value),
+                        ];
+                    }
+                }
+            } catch (Throwable $exception) {
+                $selectedOrderFormEntries = [];
+            }
+        }
+
+        $invoiceStmt = $pdo->prepare('SELECT id, total, status, due_at, paid_at, created_at, updated_at FROM invoices WHERE order_id = :order ORDER BY created_at ASC');
+        $invoiceStmt->execute(['order' => $selectedOrder['id']]);
+        $selectedOrderInvoices = $invoiceStmt->fetchAll();
+
+        $selectedOrderTimeline[] = [
+            'title' => 'Order created',
+            'description' => 'Order placed for ' . $selectedOrder['service_name'],
+            'timestamp' => $selectedOrder['created_at'],
+        ];
+        if ($selectedOrder['updated_at'] && $selectedOrder['updated_at'] !== $selectedOrder['created_at']) {
+            $selectedOrderTimeline[] = [
+                'title' => 'Order updated',
+                'description' => 'Order details were updated',
+                'timestamp' => $selectedOrder['updated_at'],
+            ];
+        }
+        if ($selectedOrder['payment_status'] !== 'pending') {
+            $selectedOrderTimeline[] = [
+                'title' => 'Payment status: ' . ucfirst($selectedOrder['payment_status']),
+                'description' => $selectedOrder['payment_reference'] ? 'Reference ' . $selectedOrder['payment_reference'] : 'Status manually updated',
+                'timestamp' => $selectedOrder['updated_at'] ?: $selectedOrder['created_at'],
+            ];
+        }
+        foreach ($selectedOrderInvoices as $invoice) {
+            $invoiceTimestamp = $invoice['paid_at'] ?: $invoice['created_at'];
+            $selectedOrderTimeline[] = [
+                'title' => 'Invoice #' . $invoice['id'] . ' ' . ($invoice['status'] === 'paid' ? 'paid' : 'issued'),
+                'description' => 'Total ' . format_currency((float) $invoice['total']),
+                'timestamp' => $invoiceTimestamp,
+            ];
+        }
+
+        usort($selectedOrderTimeline, static function (array $a, array $b): int {
+            return strcmp((string) ($a['timestamp'] ?? ''), (string) ($b['timestamp'] ?? ''));
+        });
+    }
     $tickets = $pdo->query('SELECT t.*, u.name AS client_name FROM tickets t JOIN users u ON u.id = t.user_id ORDER BY t.updated_at DESC')->fetchAll();
     $ticketMessages = $pdo->query('SELECT m.*, u.name FROM ticket_messages m JOIN users u ON u.id = m.user_id ORDER BY m.created_at')->fetchAll();
     $messagesByTicket = [];
@@ -1477,7 +1565,7 @@ if ($user['role'] === 'admin') {
         }
     }
 
-    $searchAction = $view === 'overview' ? url_for('admin/overview') : url_for('admin/' . ($view === 'ticket' ? 'tickets' : $view));
+    $searchAction = $view === 'overview' ? url_for('admin/overview') : url_for('admin/' . ($view === 'ticket' ? 'tickets' : ($view === 'order' ? 'orders' : $view)));
     include __DIR__ . '/admin/dashboard.php';
     exit;
 }
