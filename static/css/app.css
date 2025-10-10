@@ -976,7 +976,7 @@ body.has-search-open {
 .button--primary,
 button.button--primary,
 input.button--primary {
-  background: linear-gradient(90deg, var(--brand-start) 0%, #a454f7 55%, var(--brand-end) 100%);
+  background: #3b82f6;
   border: none;
   color: #fff;
 }

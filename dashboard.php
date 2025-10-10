@@ -594,10 +594,38 @@ if (is_post()) {
                 if ($totalAdmins <= 1) {
                     throw new RuntimeException('At least one administrator account is required.');
                 }
-                $deleted = $pdo->prepare('DELETE FROM users WHERE id = :id AND role = :role');
-                $deleted->execute(['id' => $adminId, 'role' => 'admin']);
-                if ($deleted->rowCount() === 0) {
-                    throw new RuntimeException('That administrator could not be removed.');
+
+                $transferAdminId = (int) $user['id'];
+
+                $pdo->beginTransaction();
+                try {
+                    $reassignServices = $pdo->prepare('UPDATE services SET created_by = :transfer WHERE created_by = :target');
+                    $reassignServices->execute([
+                        'transfer' => $transferAdminId,
+                        'target' => $adminId,
+                    ]);
+
+                    $reassignTicketMessages = $pdo->prepare('UPDATE ticket_messages SET user_id = :transfer WHERE user_id = :target');
+                    $reassignTicketMessages->execute([
+                        'transfer' => $transferAdminId,
+                        'target' => $adminId,
+                    ]);
+
+                    $deleteNotifications = $pdo->prepare('DELETE FROM notifications WHERE user_id = :target');
+                    $deleteNotifications->execute(['target' => $adminId]);
+
+                    $deleted = $pdo->prepare('DELETE FROM users WHERE id = :id AND role = :role');
+                    $deleted->execute(['id' => $adminId, 'role' => 'admin']);
+                    if ($deleted->rowCount() === 0) {
+                        throw new RuntimeException('That administrator could not be removed.');
+                    }
+
+                    $pdo->commit();
+                } catch (Throwable $exception) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    throw $exception;
                 }
                 flash('success', 'Administrator removed.');
                 $redirectTarget = 'admin/administrators';
