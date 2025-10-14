@@ -110,7 +110,6 @@ $brandHasLogo = (bool) $logo;
                 <div class="sidebar-help-card__title">Need help?</div>
                 <p class="sidebar-help-card__text">Our team replies in under 1 hour.</p>
                 <a class="sidebar-help-card__action" href="<?= e($helpCtaUrl); ?>">
-                    <i class="fa-regular fa-paper-plane" aria-hidden="true"></i>
                     <span>New ticket</span>
                 </a>
             </div>
@@ -213,7 +212,6 @@ $brandHasLogo = (bool) $logo;
                 <div class="mobile-help-card__title">Need help?</div>
                 <p class="mobile-help-card__text">Our team replies in under 1 hour.</p>
                 <a class="mobile-help-card__action" href="<?= e($helpCtaUrl); ?>">
-                    <i class="fa-regular fa-paper-plane" aria-hidden="true"></i>
                     <span>New ticket</span>
                 </a>
             </div>
