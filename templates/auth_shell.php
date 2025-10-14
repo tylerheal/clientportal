@@ -64,7 +64,7 @@ $baseAction = [
                     </label>
                     <?php if ($turnstileEnabled && $turnstileSiteKey !== ''): ?>
                         <div class="auth-turnstile">
-                            <div class="cf-turnstile" data-sitekey="<?= e($turnstileSiteKey); ?>" data-theme="dark"></div>
+                            <div class="cf-turnstile" data-sitekey="<?= e($turnstileSiteKey); ?>" data-theme="light"></div>
                         </div>
                     <?php endif; ?>
                     <button type="submit">Sign in</button>
@@ -99,7 +99,7 @@ $baseAction = [
                     </div>
                     <?php if ($turnstileEnabled && $turnstileSiteKey !== ''): ?>
                         <div class="auth-turnstile">
-                            <div class="cf-turnstile" data-sitekey="<?= e($turnstileSiteKey); ?>" data-theme="dark"></div>
+                            <div class="cf-turnstile" data-sitekey="<?= e($turnstileSiteKey); ?>" data-theme="light"></div>
                         </div>
                     <?php endif; ?>
                     <button type="submit">Sign up</button>
