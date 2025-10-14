@@ -22,13 +22,30 @@ foreach ($pending->fetchAll() as $invoice) {
             'id' => $invoice['id'],
         ]);
     $invoiceNumber = format_invoice_number($invoice);
-    $overdueReplacements = [
-        '{{name}}' => $invoice['name'],
-        '{{service}}' => $invoice['service_name'],
-        '{{invoice}}' => $invoiceNumber,
-        '{{company}}' => get_setting('company_name', 'Service Portal'),
+    $clientInfo = email_client_context(['name' => $invoice['name'], 'email' => $invoice['email']]);
+    $dueDate = $invoice['due_at'] ?? null;
+    $invoiceContext = [
+        'number' => email_safe($invoiceNumber),
+        'date' => email_safe((new DateTimeImmutable())->format('j M Y')),
+        'due_date' => email_safe($dueDate ? (new DateTimeImmutable($dueDate))->format('j M Y') : ''),
+        'url' => email_safe(absolute_url('dashboard/invoices')),
+        'status' => email_safe('Overdue'),
+        'total' => email_safe(format_currency((float) $invoice['total'])),
     ];
+    $itemsHtml = email_order_items_html([
+        ['name' => $invoice['service_name'], 'amount' => format_currency((float) $invoice['total'])],
+    ]);
     $overdueBody = sprintf("Hi %s,\n\nInvoice %s for %s is overdue. Please arrange payment at your earliest convenience.", $invoice['name'], $invoiceNumber, $invoice['service_name']);
-    send_templated_email($pdo, 'invoice_overdue', $overdueReplacements, $invoice['email'], 'Invoice overdue', $overdueBody);
+    $overdueContext = [
+        'client' => $clientInfo,
+        'invoice' => $invoiceContext,
+        'order' => [
+            'items_html' => $itemsHtml,
+            'total' => email_safe(format_currency((float) $invoice['total'])),
+        ],
+        'service' => email_safe($invoice['service_name']),
+        'name' => $clientInfo['full_name'],
+    ];
+    send_templated_email($pdo, 'invoice_overdue', $overdueContext, $invoice['email'], 'Invoice overdue', $overdueBody);
     record_notification($pdo, (int) $invoice['user_id'], 'Invoice ' . $invoiceNumber . ' is overdue', url_for('dashboard#invoices'));
 }

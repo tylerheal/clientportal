@@ -14,6 +14,9 @@ $logoUrl = $logoSetting !== '' ? asset_url($logoSetting) : '';
 $brandInitials = brand_initials($companyName);
 $mailFromName = get_setting('mail_from_name', $companyName);
 $mailFromAddress = get_setting('mail_from_address', $supportEmail ?: 'no-reply@example.com');
+$brandUrlSetting = get_setting('brand_url', '');
+$brandAddressSetting = get_setting('brand_address', '');
+$brandSupportUrlSetting = get_setting('brand_support_url', '');
 $mailTransport = get_setting('mail_transport', 'mail');
 $smtpHost = get_setting('smtp_host', '');
 $smtpPort = get_setting('smtp_port', '587');
@@ -71,8 +74,18 @@ $turnstileSecretStored = get_setting('turnstile_secret_key', '') !== '';
                 <label>Company name
                     <input type="text" name="company_name" value="<?= e($companyName); ?>" required>
                 </label>
+                <label>Website URL
+                    <input type="url" name="brand_url" value="<?= e($brandUrlSetting); ?>" placeholder="https://example.com">
+                </label>
                 <label>Support email
                     <input type="email" name="support_email" value="<?= e($supportEmail); ?>" placeholder="support@example.com">
+                </label>
+                <label>Support link
+                    <input type="url" name="brand_support_url" value="<?= e($brandSupportUrlSetting); ?>" placeholder="https://example.com/support">
+                    <span class="hint">Shown in email footers for help or contact.</span>
+                </label>
+                <label>Business address
+                    <textarea name="brand_address" rows="3" placeholder="123 Example Street&#10;London&#10;AB1 2CD"><?= e($brandAddressSetting); ?></textarea>
                 </label>
                 <label>Brand colour
                     <input type="text" name="brand_primary_color" value="<?= e($primaryColor); ?>" placeholder="#2563eb">

@@ -359,7 +359,10 @@ function seed_default_settings(PDO $pdo): void
         'payments_enable_stripe' => '0',
         'payments_enable_google_pay' => '0',
         'currency_code' => 'GBP',
-        'support_email' => 'support@example.com'
+        'support_email' => 'support@example.com',
+        'brand_url' => '',
+        'brand_address' => '',
+        'brand_support_url' => ''
     ];
 
     $select = $pdo->prepare('SELECT key FROM settings WHERE key = :key');
@@ -376,36 +379,827 @@ function seed_default_settings(PDO $pdo): void
 function seed_default_templates(PDO $pdo): void
 {
     $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+    $orderConfirmationBody = <<<'HTML'
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>Order received – {{order.number}}</title>
+    <style>
+body{margin:0!important;padding:0!important;background:#f6f7fb;color:#1b1f23;}
+img{border:0;outline:none;text-decoration:none;display:block;max-width:100%;height:auto;}
+table{border-collapse:collapse!important;}
+a{color:#0b5fff;text-decoration:none;}
+.container{width:100%;background:#f6f7fb;padding:24px;}
+.card{max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #eef0f4;border-radius:12px;overflow:hidden;}
+.px{padding-left:24px;padding-right:24px;}
+.py{padding-top:24px;padding-bottom:24px;}
+.muted{color:#6a7380;}
+.btn{display:inline-block;padding:12px 18px;border-radius:8px;background:#0b5fff;color:#ffffff;font-weight:600;}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#242a36;color:#e7eaf0;font-size:12px;}
+.hr{height:1px;background:#eef0f4;border:none;margin:24px 0;}
+.text-right{text-align:right;}
+.small{font-size:12px;}
+.h1{font-size:20px;line-height:1.4;margin:0 0 8px 0;font-weight:700;color:#101318;}
+.h2{font-size:16px;line-height:1.5;margin:0 0 8px 0;font-weight:700;color:#101318;}
+@media (max-width:480px){
+  .px{padding-left:16px!important;padding-right:16px!important;}
+  .py{padding-top:16px!important;padding-bottom:16px!important;}
+  .h1{font-size:18px!important;}
+}
+    </style>
+    <!--[if mso]>
+      <style>.btn{padding:0!important;}</style>
+    <![endif]-->
+  </head>
+  <body>
+    <div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0;">Thanks for your order. We’ll email updates as things progress.&#8203;</div>
+    <center class="container">
+      <table role="presentation" class="card" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td class="px py" style="background:#131620;">
+            <table role="presentation" width="100%">
+              <tr>
+                <td style="vertical-align:middle;">
+                  <img src="{{brand.logo_url}}" alt="{{brand.name}}" width="128">
+                </td>
+                <td class="text-right" style="vertical-align:middle;">
+                  <span class="badge">Order {{order.number}}</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py">
+            <p class="h1">Thanks for your order, {{client.first_name}}</p>
+            <p>We’ve received your order <strong>{{order.number}}</strong> placed on {{order.date}}.</p>
+            <table role="presentation" width="100%" style="width:100%;border:1px solid #eef0f4;border-radius:8px;">
+              <tr><td class="px py">
+                <p class="h2">Items</p>
+                {{order.items_html}}
+                <hr class="hr"/>
+                <table role="presentation" width="100%">
+                  <tr><td class="muted">Subtotal</td><td class="text-right">{{order.subtotal}}</td></tr>
+                  <tr><td class="muted">VAT</td><td class="text-right">{{order.vat}}</td></tr>
+                  <tr><td><strong>Total</strong></td><td class="text-right"><strong>{{order.total}}</strong></td></tr>
+                </table>
+              </td></tr>
+            </table>
+            <p style="margin:24px 0;"><a class="btn" href="{{order.url}}">View Order</a></p>
+            <p class="small muted">Payment method: {{order.payment_method}}</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py" style="background:#ffffff;">
+            <hr class="hr"/>
+            <p class="small muted" style="margin:0 0 6px 0;">
+              {{brand.name}} • <a href="{{brand.url}}">{{brand.url}}</a> • <a href="mailto:{{brand.email}}">{{brand.email}}</a>
+            </p>
+            <p class="small muted" style="margin:0 0 6px 0;">{{brand.address}}</p>
+            <p class="small muted" style="margin:0;">You’re receiving this because you have an account with {{brand.name}}. <a href="{{brand.support_url}}">Get help</a>.</p>
+          </td>
+        </tr>
+      </table>
+    </center>
+  </body>
+</html>
+HTML;
+
+    $ticketReplyBody = <<<'HTML'
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>Update on ticket #{{ticket.id}}</title>
+    <style>
+body{margin:0!important;padding:0!important;background:#f6f7fb;color:#1b1f23;}
+img{border:0;outline:none;text-decoration:none;display:block;max-width:100%;height:auto;}
+table{border-collapse:collapse!important;}
+a{color:#0b5fff;text-decoration:none;}
+.container{width:100%;background:#f6f7fb;padding:24px;}
+.card{max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #eef0f4;border-radius:12px;overflow:hidden;}
+.px{padding-left:24px;padding-right:24px;}
+.py{padding-top:24px;padding-bottom:24px;}
+.muted{color:#6a7380;}
+.btn{display:inline-block;padding:12px 18px;border-radius:8px;background:#0b5fff;color:#ffffff;font-weight:600;}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#242a36;color:#e7eaf0;font-size:12px;}
+.hr{height:1px;background:#eef0f4;border:none;margin:24px 0;}
+.text-right{text-align:right;}
+.small{font-size:12px;}
+.h1{font-size:20px;line-height:1.4;margin:0 0 8px 0;font-weight:700;color:#101318;}
+.h2{font-size:16px;line-height:1.5;margin:0 0 8px 0;font-weight:700;color:#101318;}
+@media (max-width:480px){
+  .px{padding-left:16px!important;padding-right:16px!important;}
+  .py{padding-top:16px!important;padding-bottom:16px!important;}
+  .h1{font-size:18px!important;}
+}
+    </style>
+    <!--[if mso]>
+      <style>.btn{padding:0!important;}</style>
+    <![endif]-->
+  </head>
+  <body>
+    <div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0;">Our team replied: “{{message.snippet}}”&#8203;</div>
+    <center class="container">
+      <table role="presentation" class="card" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td class="px py" style="background:#131620;">
+            <table role="presentation" width="100%">
+              <tr>
+                <td style="vertical-align:middle;">
+                  <img src="{{brand.logo_url}}" alt="{{brand.name}}" width="128">
+                </td>
+                <td class="text-right" style="vertical-align:middle;">
+                  <span class="badge">Ticket #{{ticket.id}}</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py">
+            <p class="h1">There’s an update on your ticket, {{client.first_name}}</p>
+            <p>We’ve replied to <strong>#{{ticket.id}}</strong>. Here’s a preview:</p>
+            <table role="presentation" width="100%" style="background:#ffffff;border:1px solid #eef0f4;border-radius:8px;">
+              <tr><td class="px py">
+                <p style="margin:0;font-style:italic;color:#3a4556;">“{{message.snippet}}”</p>
+              </td></tr>
+            </table>
+            <p style="margin:24px 0;"><a class="btn" href="{{ticket.url}}">View &amp; Reply</a></p>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py" style="background:#ffffff;">
+            <hr class="hr"/>
+            <p class="small muted" style="margin:0 0 6px 0;">
+              {{brand.name}} • <a href="{{brand.url}}">{{brand.url}}</a> • <a href="mailto:{{brand.email}}">{{brand.email}}</a>
+            </p>
+            <p class="small muted" style="margin:0 0 6px 0;">{{brand.address}}</p>
+            <p class="small muted" style="margin:0;">You’re receiving this because you have an account with {{brand.name}}. <a href="{{brand.support_url}}">Get help</a>.</p>
+          </td>
+        </tr>
+      </table>
+    </center>
+  </body>
+</html>
+HTML;
+
+    $ticketOpenedBody = <<<'HTML'
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>We’ve opened your ticket #{{ticket.id}} – {{ticket.subject}}</title>
+    <style>
+body{margin:0!important;padding:0!important;background:#f6f7fb;color:#1b1f23;}
+img{border:0;outline:none;text-decoration:none;display:block;max-width:100%;height:auto;}
+table{border-collapse:collapse!important;}
+a{color:#0b5fff;text-decoration:none;}
+.container{width:100%;background:#f6f7fb;padding:24px;}
+.card{max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #eef0f4;border-radius:12px;overflow:hidden;}
+.px{padding-left:24px;padding-right:24px;}
+.py{padding-top:24px;padding-bottom:24px;}
+.muted{color:#6a7380;}
+.btn{display:inline-block;padding:12px 18px;border-radius:8px;background:#0b5fff;color:#ffffff;font-weight:600;}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#242a36;color:#e7eaf0;font-size:12px;}
+.hr{height:1px;background:#eef0f4;border:none;margin:24px 0;}
+.text-right{text-align:right;}
+.small{font-size:12px;}
+.h1{font-size:20px;line-height:1.4;margin:0 0 8px 0;font-weight:700;color:#101318;}
+.h2{font-size:16px;line-height:1.5;margin:0 0 8px 0;font-weight:700;color:#101318;}
+@media (max-width:480px){
+  .px{padding-left:16px!important;padding-right:16px!important;}
+  .py{padding-top:16px!important;padding-bottom:16px!important;}
+  .h1{font-size:18px!important;}
+}
+    </style>
+    <!--[if mso]>
+      <style>.btn{padding:0!important;}</style>
+    <![endif]-->
+  </head>
+  <body>
+    <div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0;">Thanks for getting in touch. We’ll reply shortly.&#8203;</div>
+    <center class="container">
+      <table role="presentation" class="card" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td class="px py" style="background:#131620;">
+            <table role="presentation" width="100%">
+              <tr>
+                <td style="vertical-align:middle;">
+                  <img src="{{brand.logo_url}}" alt="{{brand.name}}" width="128">
+                </td>
+                <td class="text-right" style="vertical-align:middle;">
+                  <span class="badge">Ticket #{{ticket.id}}</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py">
+            <p class="h1">Thanks {{client.first_name}}, we’ve opened your ticket</p>
+            <p>Ticket <strong>#{{ticket.id}}</strong> is now <strong>{{ticket.status}}</strong> with priority <strong>{{ticket.priority}}</strong>.</p>
+            <p>We’ll take a look and get back to you. You can follow progress or reply at any time.</p>
+            <p style="margin:24px 0;"><a class="btn" href="{{ticket.url}}">View Ticket</a></p>
+            <table role="presentation" width="100%" style="background:#fafbff;border:1px solid #eef0f4;border-radius:8px;">
+              <tr><td class="px py">
+                <p class="h2" style="margin-top:0;">Summary</p>
+                <p><strong>Subject:</strong> {{ticket.subject}}<br/>
+                   <strong>Ticket ID:</strong> {{ticket.id}}<br/>
+                   <strong>Status:</strong> {{ticket.status}}<br/>
+                   <strong>Priority:</strong> {{ticket.priority}}</p>
+              </td></tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py" style="background:#ffffff;">
+            <hr class="hr"/>
+            <p class="small muted" style="margin:0 0 6px 0;">
+              {{brand.name}} • <a href="{{brand.url}}">{{brand.url}}</a> • <a href="mailto:{{brand.email}}">{{brand.email}}</a>
+            </p>
+            <p class="small muted" style="margin:0 0 6px 0;">{{brand.address}}</p>
+            <p class="small muted" style="margin:0;">You’re receiving this because you have an account with {{brand.name}}. <a href="{{brand.support_url}}">Get help</a>.</p>
+          </td>
+        </tr>
+      </table>
+    </center>
+  </body>
+</html>
+HTML;
+
+    $invoiceCreatedBody = <<<'HTML'
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>Invoice {{invoice.number}} for {{service}}</title>
+    <style>
+body{margin:0!important;padding:0!important;background:#f6f7fb;color:#1b1f23;}
+img{border:0;outline:none;text-decoration:none;display:block;max-width:100%;height:auto;}
+table{border-collapse:collapse!important;}
+a{color:#0b5fff;text-decoration:none;}
+.container{width:100%;background:#f6f7fb;padding:24px;}
+.card{max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #eef0f4;border-radius:12px;overflow:hidden;}
+.px{padding-left:24px;padding-right:24px;}
+.py{padding-top:24px;padding-bottom:24px;}
+.muted{color:#6a7380;}
+.btn{display:inline-block;padding:12px 18px;border-radius:8px;background:#0b5fff;color:#ffffff;font-weight:600;}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#242a36;color:#e7eaf0;font-size:12px;}
+.hr{height:1px;background:#eef0f4;border:none;margin:24px 0;}
+.text-right{text-align:right;}
+.small{font-size:12px;}
+.h1{font-size:20px;line-height:1.4;margin:0 0 8px 0;font-weight:700;color:#101318;}
+.h2{font-size:16px;line-height:1.5;margin:0 0 8px 0;font-weight:700;color:#101318;}
+@media (max-width:480px){
+  .px{padding-left:16px!important;padding-right:16px!important;}
+  .py{padding-top:16px!important;padding-bottom:16px!important;}
+  .h1{font-size:18px!important;}
+}
+    </style>
+  </head>
+  <body>
+    <div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0;">Invoice {{invoice.number}} for {{service}} is now available.&#8203;</div>
+    <center class="container">
+      <table role="presentation" class="card" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td class="px py" style="background:#131620;">
+            <table role="presentation" width="100%">
+              <tr>
+                <td style="vertical-align:middle;">
+                  <img src="{{brand.logo_url}}" alt="{{brand.name}}" width="128">
+                </td>
+                <td class="text-right" style="vertical-align:middle;">
+                  <span class="badge">Invoice {{invoice.number}}</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py">
+            <p class="h1">New invoice issued, {{client.first_name}}</p>
+            <p>We’ve raised invoice <strong>{{invoice.number}}</strong> for {{service}}. The total due is {{invoice.total}} and it is payable by {{invoice.due_date}}.</p>
+            <table role="presentation" width="100%" style="background:#fafbff;border:1px solid #eef0f4;border-radius:8px;">
+              <tr><td class="px py">
+                <p class="h2">Invoice summary</p>
+                <p><strong>Issued:</strong> {{invoice.date}}<br/>
+                   <strong>Due:</strong> {{invoice.due_date}}<br/>
+                   <strong>Status:</strong> {{invoice.status}}</p>
+                <hr class="hr"/>
+                <table role="presentation" width="100%">
+                  {{order.items_html}}
+                  <tr><td class="muted">Total</td><td class="text-right"><strong>{{invoice.total}}</strong></td></tr>
+                </table>
+              </td></tr>
+            </table>
+            <p style="margin:24px 0;"><a class="btn" href="{{invoice.url}}">Review Invoice</a></p>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py" style="background:#ffffff;">
+            <hr class="hr"/>
+            <p class="small muted" style="margin:0 0 6px 0;">
+              {{brand.name}} • <a href="{{brand.url}}">{{brand.url}}</a> • <a href="mailto:{{brand.email}}">{{brand.email}}</a>
+            </p>
+            <p class="small muted" style="margin:0 0 6px 0;">{{brand.address}}</p>
+            <p class="small muted" style="margin:0;">You’re receiving this because you have an account with {{brand.name}}. <a href="{{brand.support_url}}">Get help</a>.</p>
+          </td>
+        </tr>
+      </table>
+    </center>
+  </body>
+</html>
+HTML;
+
+    $invoicePaymentBody = <<<'HTML'
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>Payment received – #{{invoice.number}} ({{invoice.total}})</title>
+    <style>
+body{margin:0!important;padding:0!important;background:#f6f7fb;color:#1b1f23;}
+img{border:0;outline:none;text-decoration:none;display:block;max-width:100%;height:auto;}
+table{border-collapse:collapse!important;}
+a{color:#0b5fff;text-decoration:none;}
+.container{width:100%;background:#f6f7fb;padding:24px;}
+.card{max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #eef0f4;border-radius:12px;overflow:hidden;}
+.px{padding-left:24px;padding-right:24px;}
+.py{padding-top:24px;padding-bottom:24px;}
+.muted{color:#6a7380;}
+.btn{display:inline-block;padding:12px 18px;border-radius:8px;background:#0b5fff;color:#ffffff;font-weight:600;}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#242a36;color:#e7eaf0;font-size:12px;}
+.hr{height:1px;background:#eef0f4;border:none;margin:24px 0;}
+.text-right{text-align:right;}
+.small{font-size:12px;}
+.h1{font-size:20px;line-height:1.4;margin:0 0 8px 0;font-weight:700;color:#101318;}
+.h2{font-size:16px;line-height:1.5;margin:0 0 8px 0;font-weight:700;color:#101318;}
+@media (max-width:480px){
+  .px{padding-left:16px!important;padding-right:16px!important;}
+  .py{padding-top:16px!important;padding-bottom:16px!important;}
+  .h1{font-size:18px!important;}
+}
+    </style>
+  </head>
+  <body>
+    <div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0;">Thanks! We’ve applied your payment.&#8203;</div>
+    <center class="container">
+      <table role="presentation" class="card" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td class="px py" style="background:#131620;">
+            <table role="presentation" width="100%">
+              <tr>
+                <td style="vertical-align:middle;">
+                  <img src="{{brand.logo_url}}" alt="{{brand.name}}" width="128">
+                </td>
+                <td class="text-right" style="vertical-align:middle;">
+                  <span class="badge">Paid</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py">
+            <p class="h1">Payment received</p>
+            <p>Thanks! We’ve received your payment for invoice <strong>{{invoice.number}}</strong>.</p>
+            <p><strong>Amount:</strong> {{invoice.total}}</p>
+            <p style="margin:24px 0;"><a class="btn" href="{{invoice.url}}">Download Invoice</a></p>
+            <p class="small muted">If you didn’t make this payment, contact us immediately at <a href="mailto:{{brand.email}}">{{brand.email}}</a>.</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py" style="background:#ffffff;">
+            <hr class="hr"/>
+            <p class="small muted" style="margin:0 0 6px 0;">
+              {{brand.name}} • <a href="{{brand.url}}">{{brand.url}}</a> • <a href="mailto:{{brand.email}}">{{brand.email}}</a>
+            </p>
+            <p class="small muted" style="margin:0 0 6px 0;">{{brand.address}}</p>
+            <p class="small muted" style="margin:0;">You’re receiving this because you have an account with {{brand.name}}. <a href="{{brand.support_url}}">Get help</a>.</p>
+          </td>
+        </tr>
+      </table>
+    </center>
+  </body>
+</html>
+HTML;
+
+    $invoiceOverdueBody = <<<'HTML'
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>Payment overdue – Invoice {{invoice.number}}</title>
+    <style>
+body{margin:0!important;padding:0!important;background:#f6f7fb;color:#1b1f23;}
+img{border:0;outline:none;text-decoration:none;display:block;max-width:100%;height:auto;}
+table{border-collapse:collapse!important;}
+a{color:#0b5fff;text-decoration:none;}
+.container{width:100%;background:#f6f7fb;padding:24px;}
+.card{max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #eef0f4;border-radius:12px;overflow:hidden;}
+.px{padding-left:24px;padding-right:24px;}
+.py{padding-top:24px;padding-bottom:24px;}
+.muted{color:#6a7380;}
+.btn{display:inline-block;padding:12px 18px;border-radius:8px;background:#0b5fff;color:#ffffff;font-weight:600;}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#b91c1c;color:#ffffff;font-size:12px;}
+.hr{height:1px;background:#eef0f4;border:none;margin:24px 0;}
+.text-right{text-align:right;}
+.small{font-size:12px;}
+.h1{font-size:20px;line-height:1.4;margin:0 0 8px 0;font-weight:700;color:#101318;}
+.h2{font-size:16px;line-height:1.5;margin:0 0 8px 0;font-weight:700;color:#101318;}
+@media (max-width:480px){
+  .px{padding-left:16px!important;padding-right:16px!important;}
+  .py{padding-top:16px!important;padding-bottom:16px!important;}
+  .h1{font-size:18px!important;}
+}
+    </style>
+  </head>
+  <body>
+    <div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0;">Invoice {{invoice.number}} for {{service}} is overdue.&#8203;</div>
+    <center class="container">
+      <table role="presentation" class="card" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td class="px py" style="background:#131620;">
+            <table role="presentation" width="100%">
+              <tr>
+                <td style="vertical-align:middle;">
+                  <img src="{{brand.logo_url}}" alt="{{brand.name}}" width="128">
+                </td>
+                <td class="text-right" style="vertical-align:middle;">
+                  <span class="badge">Overdue</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py">
+            <p class="h1">Invoice overdue – {{invoice.number}}</p>
+            <p>Invoice <strong>{{invoice.number}}</strong> for {{service}} is now overdue. Please arrange payment at your earliest convenience.</p>
+            <table role="presentation" width="100%" style="background:#fafbff;border:1px solid #eef0f4;border-radius:8px;">
+              <tr><td class="px py">
+                <p class="h2">Invoice details</p>
+                <p><strong>Issued:</strong> {{invoice.date}}<br/>
+                   <strong>Due:</strong> {{invoice.due_date}}<br/>
+                   <strong>Status:</strong> {{invoice.status}}</p>
+                <hr class="hr"/>
+                <table role="presentation" width="100%">
+                  {{order.items_html}}
+                  <tr><td class="muted">Balance due</td><td class="text-right"><strong>{{invoice.total}}</strong></td></tr>
+                </table>
+              </td></tr>
+            </table>
+            <p style="margin:24px 0;"><a class="btn" href="{{invoice.url}}">Pay Invoice</a></p>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py" style="background:#ffffff;">
+            <hr class="hr"/>
+            <p class="small muted" style="margin:0 0 6px 0;">
+              {{brand.name}} • <a href="{{brand.url}}">{{brand.url}}</a> • <a href="mailto:{{brand.email}}">{{brand.email}}</a>
+            </p>
+            <p class="small muted" style="margin:0 0 6px 0;">{{brand.address}}</p>
+            <p class="small muted" style="margin:0;">You’re receiving this because you have an account with {{brand.name}}. <a href="{{brand.support_url}}">Get help</a>.</p>
+          </td>
+        </tr>
+      </table>
+    </center>
+  </body>
+</html>
+HTML;
+
+    $adminNewOrderBody = <<<'HTML'
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>New order {{order.number}} – {{client.full_name}} ({{order.total}})</title>
+    <style>
+body{margin:0!important;padding:0!important;background:#f6f7fb;color:#1b1f23;}
+img{border:0;outline:none;text-decoration:none;display:block;max-width:100%;height:auto;}
+table{border-collapse:collapse!important;}
+a{color:#0b5fff;text-decoration:none;}
+.container{width:100%;background:#f6f7fb;padding:24px;}
+.card{max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #eef0f4;border-radius:12px;overflow:hidden;}
+.px{padding-left:24px;padding-right:24px;}
+.py{padding-top:24px;padding-bottom:24px;}
+.muted{color:#6a7380;}
+.btn{display:inline-block;padding:12px 18px;border-radius:8px;background:#0b5fff;color:#ffffff;font-weight:600;}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#242a36;color:#e7eaf0;font-size:12px;}
+.hr{height:1px;background:#eef0f4;border:none;margin:24px 0;}
+.text-right{text-align:right;}
+.small{font-size:12px;}
+.h1{font-size:20px;line-height:1.4;margin:0 0 8px 0;font-weight:700;color:#101318;}
+.h2{font-size:16px;line-height:1.5;margin:0 0 8px 0;font-weight:700;color:#101318;}
+@media (max-width:480px){
+  .px{padding-left:16px!important;padding-right:16px!important;}
+  .py{padding-top:16px!important;padding-bottom:16px!important;}
+  .h1{font-size:18px!important;}
+}
+    </style>
+  </head>
+  <body>
+    <center class="container">
+      <table role="presentation" class="card" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td class="px py" style="background:#131620;">
+            <table role="presentation" width="100%">
+              <tr>
+                <td style="vertical-align:middle;">
+                  <img src="{{brand.logo_url}}" alt="{{brand.name}}" width="128">
+                </td>
+                <td class="text-right" style="vertical-align:middle;">
+                  <span class="badge">Order {{order.number}}</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py">
+            <p class="h1">New order received</p>
+            <p><strong>Order:</strong> {{order.number}} on {{order.date}}</p>
+            <p><strong>Client:</strong> {{client.full_name}} ({{client.email}})</p>
+            <table role="presentation" width="100%" style="border:1px solid #eef0f4;border-radius:8px;">
+              <tr><td class="px py">
+                <p class="h2">Items</p>
+                {{order.items_html}}
+                <hr class="hr"/>
+                <table role="presentation" width="100%">
+                  <tr><td class="muted">Total</td><td class="text-right"><strong>{{order.total}}</strong></td></tr>
+                  <tr><td class="muted">Payment</td><td class="text-right">{{order.payment_method}}</td></tr>
+                </table>
+              </td></tr>
+            </table>
+            <p style="margin:24px 0;"><a class="btn" href="{{order.url}}">Open in Portal</a></p>
+          </td>
+        </tr>
+      </table>
+    </center>
+  </body>
+</html>
+HTML;
+
+    $adminNewTicketBody = <<<'HTML'
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>New ticket #{{ticket.id}} – {{ticket.subject}}</title>
+    <style>
+body{margin:0!important;padding:0!important;background:#f6f7fb;color:#1b1f23;}
+img{border:0;outline:none;text-decoration:none;display:block;max-width:100%;height:auto;}
+table{border-collapse:collapse!important;}
+a{color:#0b5fff;text-decoration:none;}
+.container{width:100%;background:#f6f7fb;padding:24px;}
+.card{max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #eef0f4;border-radius:12px;overflow:hidden;}
+.px{padding-left:24px;padding-right:24px;}
+.py{padding-top:24px;padding-bottom:24px;}
+.muted{color:#6a7380;}
+.btn{display:inline-block;padding:12px 18px;border-radius:8px;background:#0b5fff;color:#ffffff;font-weight:600;}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#242a36;color:#e7eaf0;font-size:12px;}
+.hr{height:1px;background:#eef0f4;border:none;margin:24px 0;}
+.h1{font-size:20px;line-height:1.4;margin:0 0 8px 0;font-weight:700;color:#101318;}
+@media (max-width:480px){
+  .px{padding-left:16px!important;padding-right:16px!important;}
+  .py{padding-top:16px!important;padding-bottom:16px!important;}
+  .h1{font-size:18px!important;}
+}
+    </style>
+  </head>
+  <body>
+    <center class="container">
+      <table role="presentation" class="card" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td class="px py" style="background:#131620;">
+            <table role="presentation" width="100%">
+              <tr>
+                <td style="vertical-align:middle;">
+                  <img src="{{brand.logo_url}}" alt="{{brand.name}}" width="128">
+                </td>
+                <td class="text-right" style="vertical-align:middle;">
+                  <span class="badge">New Ticket</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py">
+            <p class="h1">New support ticket</p>
+            <p><strong>#{{ticket.id}}</strong> from {{client.full_name}} ({{client.email}})</p>
+            <p><strong>Subject:</strong> {{ticket.subject}} • <strong>Priority:</strong> {{ticket.priority}}</p>
+            <p style="margin:24px 0;"><a class="btn" href="{{ticket.url}}">Open Ticket</a></p>
+          </td>
+        </tr>
+      </table>
+    </center>
+  </body>
+</html>
+HTML;
+
+    $adminTicketReplyBody = <<<'HTML'
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>Client replied on #{{ticket.id}}</title>
+    <style>
+body{margin:0!important;padding:0!important;background:#f6f7fb;color:#1b1f23;}
+img{border:0;outline:none;text-decoration:none;display:block;max-width:100%;height:auto;}
+table{border-collapse:collapse!important;}
+a{color:#0b5fff;text-decoration:none;}
+.container{width:100%;background:#f6f7fb;padding:24px;}
+.card{max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #eef0f4;border-radius:12px;overflow:hidden;}
+.px{padding-left:24px;padding-right:24px;}
+.py{padding-top:24px;padding-bottom:24px;}
+.muted{color:#6a7380;}
+.btn{display:inline-block;padding:12px 18px;border-radius:8px;background:#0b5fff;color:#ffffff;font-weight:600;}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#242a36;color:#e7eaf0;font-size:12px;}
+.hr{height:1px;background:#eef0f4;border:none;margin:24px 0;}
+.h1{font-size:20px;line-height:1.4;margin:0 0 8px 0;font-weight:700;color:#101318;}
+@media (max-width:480px){
+  .px{padding-left:16px!important;padding-right:16px!important;}
+  .py{padding-top:16px!important;padding-bottom:16px!important;}
+  .h1{font-size:18px!important;}
+}
+    </style>
+  </head>
+  <body>
+    <center class="container">
+      <table role="presentation" class="card" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td class="px py" style="background:#131620;">
+            <table role="presentation" width="100%">
+              <tr>
+                <td style="vertical-align:middle;">
+                  <img src="{{brand.logo_url}}" alt="{{brand.name}}" width="128">
+                </td>
+                <td class="text-right" style="vertical-align:middle;">
+                  <span class="badge">Ticket #{{ticket.id}}</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py">
+            <p class="h1">Client replied</p>
+            <p>Ticket <strong>#{{ticket.id}}</strong> has a new reply from {{client.full_name}}.</p>
+            <table role="presentation" width="100%" style="background:#ffffff;border:1px solid #eef0f4;border-radius:8px;">
+              <tr><td class="px py">
+                <p style="margin:0;color:#3a4556;">“{{message.snippet}}”</p>
+              </td></tr>
+            </table>
+            <p style="margin:24px 0;"><a class="btn" href="{{ticket.url}}">Reply in Portal</a></p>
+          </td>
+        </tr>
+      </table>
+    </center>
+  </body>
+</html>
+HTML;
+
+    $adminPaymentSuccessBody = <<<'HTML'
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>Payment success – {{invoice.number}} ({{invoice.total}})</title>
+    <style>
+body{margin:0!important;padding:0!important;background:#f6f7fb;color:#1b1f23;}
+img{border:0;outline:none;text-decoration:none;display:block;max-width:100%;height:auto;}
+table{border-collapse:collapse!important;}
+a{color:#0b5fff;text-decoration:none;}
+.container{width:100%;background:#f6f7fb;padding:24px;}
+.card{max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #eef0f4;border-radius:12px;overflow:hidden;}
+.px{padding-left:24px;padding-right:24px;}
+.py{padding-top:24px;padding-bottom:24px;}
+.muted{color:#6a7380;}
+.btn{display:inline-block;padding:12px 18px;border-radius:8px;background:#0b5fff;color:#ffffff;font-weight:600;}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#242a36;color:#e7eaf0;font-size:12px;}
+.hr{height:1px;background:#eef0f4;border:none;margin:24px 0;}
+.h1{font-size:20px;line-height:1.4;margin:0 0 8px 0;font-weight:700;color:#101318;}
+@media (max-width:480px){
+  .px{padding-left:16px!important;padding-right:16px!important;}
+  .py{padding-top:16px!important;padding-bottom:16px!important;}
+  .h1{font-size:18px!important;}
+}
+    </style>
+  </head>
+  <body>
+    <center class="container">
+      <table role="presentation" class="card" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td class="px py" style="background:#131620;">
+            <table role="presentation" width="100%">
+              <tr>
+                <td style="vertical-align:middle;">
+                  <img src="{{brand.logo_url}}" alt="{{brand.name}}" width="128">
+                </td>
+                <td class="text-right" style="vertical-align:middle;">
+                  <span class="badge">Paid</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py">
+            <p class="h1">Payment received</p>
+            <p>Order <strong>{{order.number}}</strong> has been paid by {{client.full_name}}.</p>
+            <p><strong>Amount:</strong> {{invoice.total}}</p>
+            <p style="margin:24px 0;"><a class="btn" href="{{order.url}}">Open Order</a></p>
+          </td>
+        </tr>
+      </table>
+    </center>
+  </body>
+</html>
+HTML;
+
     $defaults = [
         [
             'slug' => 'order_confirmation',
             'name' => 'Order confirmation',
-            'subject' => 'Order received – {{service}}',
-            'body' => "Hi {{name}},\n\nThanks for your order of {{service}}. We'll let you know once it's underway.\n\nRegards,\n{{company}}",
+            'subject' => 'Order received – {{order.number}}',
+            'body' => $orderConfirmationBody,
         ],
         [
             'slug' => 'ticket_reply',
             'name' => 'Ticket reply',
-            'subject' => 'Ticket update: {{subject}}',
-            'body' => "Hi {{name}},\n\nWe've responded to your support ticket '{{subject}}'.\n\n{{message}}\n\nRegards,\n{{company}}",
+            'subject' => 'Ticket update: {{ticket.subject}}',
+            'body' => $ticketReplyBody,
         ],
         [
-            'slug' => 'invoice_payment_success',
-            'name' => 'Invoice payment success',
-            'subject' => 'Payment received – Invoice {{invoice}}',
-            'body' => "Hi {{name}},\n\nWe've received your payment for invoice {{invoice}} covering {{service}}. Thank you!\n\nRegards,\n{{company}}",
+            'slug' => 'client_ticket_opened',
+            'name' => 'Ticket opened (client)',
+            'subject' => 'We’ve opened your ticket #{{ticket.id}}',
+            'body' => $ticketOpenedBody,
         ],
         [
             'slug' => 'invoice_created',
             'name' => 'Invoice created',
-            'subject' => 'Invoice {{invoice}} for {{service}}',
-            'body' => "Hi {{name}},\n\nWe've raised invoice {{invoice}} for {{service}}. The total due is {{amount}} and it is payable by {{due_date}}.\n\nRegards,\n{{company}}",
+            'subject' => 'Invoice {{invoice.number}} for {{service}}',
+            'body' => $invoiceCreatedBody,
+        ],
+        [
+            'slug' => 'invoice_payment_success',
+            'name' => 'Invoice payment success',
+            'subject' => 'Payment received – Invoice {{invoice.number}}',
+            'body' => $invoicePaymentBody,
         ],
         [
             'slug' => 'invoice_overdue',
             'name' => 'Invoice overdue',
-            'subject' => 'Payment overdue – Invoice {{invoice}}',
-            'body' => "Hi {{name}},\n\nInvoice {{invoice}} for {{service}} is now overdue. Please complete payment as soon as possible.\n\nRegards,\n{{company}}",
+            'subject' => 'Payment overdue – Invoice {{invoice.number}}',
+            'body' => $invoiceOverdueBody,
+        ],
+        [
+            'slug' => 'admin_new_order',
+            'name' => 'Admin new order',
+            'subject' => 'New order {{order.number}} – {{client.full_name}}',
+            'body' => $adminNewOrderBody,
+        ],
+        [
+            'slug' => 'admin_new_ticket',
+            'name' => 'Admin new ticket',
+            'subject' => 'New ticket #{{ticket.id}} – {{ticket.subject}}',
+            'body' => $adminNewTicketBody,
+        ],
+        [
+            'slug' => 'admin_ticket_reply',
+            'name' => 'Admin ticket reply',
+            'subject' => 'Client replied on #{{ticket.id}}',
+            'body' => $adminTicketReplyBody,
+        ],
+        [
+            'slug' => 'admin_payment_success',
+            'name' => 'Admin payment success',
+            'subject' => 'Payment received – {{invoice.number}} ({{invoice.total}})',
+            'body' => $adminPaymentSuccessBody,
         ],
     ];
 

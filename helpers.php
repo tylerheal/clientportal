@@ -912,14 +912,18 @@ function process_subscription_cycle(PDO $pdo, array $subscription, \DateTimeImmu
 
     if ($invoice) {
         $invoiceNumber = format_invoice_number($invoice);
-        $replacements = [
-            '{{name}}' => $invoice['name'],
-            '{{service}}' => $invoice['service_name'],
-            '{{invoice}}' => $invoiceNumber,
-            '{{amount}}' => format_currency($amount),
-            '{{due_date}}' => $dueAt->format('j M Y'),
-            '{{company}}' => get_setting('company_name', 'Service Portal'),
+        $clientInfo = email_client_context(['name' => $invoice['name'], 'email' => $invoice['email']]);
+        $invoiceContext = [
+            'number' => email_safe($invoiceNumber),
+            'date' => email_safe($now->format('j M Y')),
+            'due_date' => email_safe($dueAt->format('j M Y')),
+            'url' => email_safe(absolute_url('dashboard/invoices')),
+            'status' => email_safe('Pending'),
+            'total' => email_safe(format_currency($amount)),
         ];
+        $orderItemsHtml = email_order_items_html([
+            ['name' => $invoice['service_name'], 'amount' => format_currency($amount)],
+        ]);
         $body = sprintf(
             "Hi %s,\n\nWe've raised invoice %s for %s. The total due is %s and it is payable by %s.",
             $invoice['name'],
@@ -928,7 +932,17 @@ function process_subscription_cycle(PDO $pdo, array $subscription, \DateTimeImmu
             format_currency($amount),
             $dueAt->format('j M Y')
         );
-        send_templated_email($pdo, 'invoice_created', $replacements, $invoice['email'], 'New invoice issued', $body);
+        $invoiceEmailContext = [
+            'client' => $clientInfo,
+            'invoice' => $invoiceContext,
+            'order' => [
+                'items_html' => $orderItemsHtml,
+                'total' => email_safe(format_currency($amount)),
+            ],
+            'service' => email_safe($invoice['service_name']),
+            'name' => $clientInfo['full_name'],
+        ];
+        send_templated_email($pdo, 'invoice_created', $invoiceEmailContext, $invoice['email'], 'New invoice issued', $body);
         record_notification($pdo, (int) $subscription['user_id'], 'Invoice ' . $invoiceNumber . ' generated for ' . $invoice['service_name'], url_for('dashboard#invoices'));
         notify_admins($pdo, 'Invoice ' . $invoiceNumber . ' generated for ' . $invoice['service_name'], url_for('admin/orders'));
     }
@@ -1325,12 +1339,20 @@ function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, st
     }
 
     $invoiceNumber = format_invoice_number($invoice);
-    $replacements = [
-        '{{name}}' => $clientName !== '' ? $clientName : 'there',
-        '{{service}}' => $serviceName,
-        '{{invoice}}' => $invoiceNumber,
-        '{{company}}' => get_setting('company_name', 'Service Portal'),
+    $clientInfo = email_client_context(['name' => $clientName, 'email' => $clientEmail]);
+    $invoiceDate = $invoice['created_at'] ?? null;
+    $invoiceDue = $invoice['due_at'] ?? null;
+    $invoiceContext = [
+        'number' => email_safe($invoiceNumber),
+        'date' => email_safe($invoiceDate ? (new DateTimeImmutable($invoiceDate))->format('j M Y') : (new DateTimeImmutable())->format('j M Y')),
+        'due_date' => email_safe($invoiceDue ? (new DateTimeImmutable($invoiceDue))->format('j M Y') : ''),
+        'url' => email_safe(absolute_url('dashboard/invoices')),
+        'status' => email_safe('Paid'),
+        'total' => email_safe(format_currency($total)),
     ];
+    $orderItemsHtml = email_order_items_html([
+        ['name' => $serviceName, 'amount' => format_currency($total)],
+    ]);
 
     $body = sprintf(
         "Hi %s,\n\nWe've recorded your payment for invoice %s covering %s.",
@@ -1339,10 +1361,36 @@ function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, st
         $serviceName
     );
 
+    $clientPaymentContext = [
+        'client' => $clientInfo,
+        'invoice' => $invoiceContext,
+        'order' => [
+            'number' => email_safe('#' . $orderId),
+            'url' => email_safe(absolute_url('dashboard/orders/' . $orderId)),
+            'items_html' => $orderItemsHtml,
+            'total' => email_safe(format_currency($total)),
+        ],
+        'service' => email_safe($serviceName),
+        'name' => $clientInfo['full_name'],
+    ];
+
     if ($clientEmail) {
-        send_templated_email($pdo, 'invoice_payment_success', $replacements, $clientEmail, 'Payment received', $body);
+        send_templated_email($pdo, 'invoice_payment_success', $clientPaymentContext, $clientEmail, 'Payment received', $body);
     }
 
+    $adminContext = [
+        'client' => $clientInfo,
+        'invoice' => $invoiceContext,
+        'order' => [
+            'number' => email_safe('#' . $orderId),
+            'url' => email_safe(absolute_url('admin/orders/' . $orderId)),
+            'items_html' => $orderItemsHtml,
+            'total' => email_safe(format_currency($total)),
+        ],
+        'service' => email_safe($serviceName),
+    ];
+
+    notify_admins($pdo, 'Invoice ' . $invoiceNumber . ' paid by ' . ($clientName !== '' ? $clientName : 'client'), url_for('admin/orders/' . $orderId), 'admin_payment_success', $adminContext);
     record_notification($pdo, $userId, 'Invoice ' . $invoiceNumber . ' paid successfully.', url_for('dashboard/orders'));
 }
 
@@ -1514,17 +1562,41 @@ function find_template(PDO $pdo, string $slug): ?array
     return $cache[$slug];
 }
 
-function send_templated_email(PDO $pdo, string $slug, array $replacements, string $to, string $fallbackSubject, ?string $fallbackBody = null): bool
+function send_templated_email(PDO $pdo, string $slug, array $context, string $to, string $fallbackSubject, ?string $fallbackBody = null): bool
 {
+    $brand = email_brand_context();
+    $baseContext = [
+        'brand' => $brand,
+        'company' => $brand['name'],
+        'support_email' => $brand['email'],
+    ];
+
+    $context = array_replace_recursive($baseContext, $context);
+    $replacements = email_flatten_context($context);
+
     $template = find_template($pdo, $slug);
+    $subject = strtr($fallbackSubject, $replacements);
+    $textBody = strtr($fallbackBody ?? $fallbackSubject, $replacements);
+    $htmlBody = null;
+
     if ($template) {
         $subject = strtr($template['subject'], $replacements);
         $body = strtr($template['body'], $replacements);
-    } else {
-        $subject = $fallbackSubject;
-        $body = $fallbackBody ?? $fallbackSubject;
+        $isHtml = strip_tags($body) !== $body || stripos($body, '<html') !== false || stripos($body, '<table') !== false;
+        if ($isHtml) {
+            $htmlBody = $body;
+            $textBody = email_html_to_text($body);
+        } else {
+            $textBody = $body;
+            $htmlBody = null;
+        }
     }
-    return send_notification_email($to, $subject, $body);
+
+    if ($htmlBody !== null && trim($textBody) === '') {
+        $textBody = email_html_to_text($htmlBody);
+    }
+
+    return send_notification_email($to, $subject, $textBody, $htmlBody);
 }
 
 function random_base32(int $length = 32): string
@@ -1626,21 +1698,44 @@ function admin_notification_emails(PDO $pdo): array
     return array_values(array_unique($emails));
 }
 
-function notify_admins(PDO $pdo, string $message, ?string $link = null): void
+function notify_admins(PDO $pdo, string $message, ?string $link = null, ?string $templateSlug = null, array $templateContext = [], ?string $subjectOverride = null): void
 {
     $company = get_setting('company_name', 'Service Portal');
-    $subject = sprintf('[%s] %s', $company, $message);
-    $body = $message;
-    if ($link) {
-        $body .= "\n\nOpen: " . $link;
+    $subject = $subjectOverride ?? sprintf('[%s] %s', $company, $message);
+    $absoluteLink = $link ? absolute_url($link) : null;
+    $textBody = $message;
+    if ($absoluteLink) {
+        $textBody .= "\n\nOpen: " . $absoluteLink;
     }
 
     foreach (admin_user_ids($pdo) as $adminId) {
         record_notification($pdo, $adminId, $message, $link);
     }
 
+    $baseContext = [
+        'message' => [
+            'full' => email_safe($message),
+            'snippet' => email_safe(email_snippet($message)),
+        ],
+    ];
+
+    if ($absoluteLink) {
+        $baseContext['link'] = [
+            'url' => email_safe($absoluteLink),
+        ];
+    }
+
     foreach (admin_notification_emails($pdo) as $email) {
-        send_notification_email($email, $subject, $body);
+        if ($templateSlug) {
+            $context = array_replace_recursive($baseContext, $templateContext, [
+                'admin' => [
+                    'email' => email_safe($email),
+                ],
+            ]);
+            send_templated_email($pdo, $templateSlug, $context, $email, $subject, $textBody);
+        } else {
+            send_notification_email($email, $subject, $textBody);
+        }
     }
 }
 
@@ -1671,7 +1766,7 @@ function mark_notifications_read(PDO $pdo, int $userId): void
         ]);
 }
 
-function send_notification_email(string $to, string $subject, string $body): bool
+function send_notification_email(string $to, string $subject, string $textBody, ?string $htmlBody = null): bool
 {
     $config = require __DIR__ . '/config.php';
     $defaults = $config['mail'];
@@ -1679,7 +1774,17 @@ function send_notification_email(string $to, string $subject, string $body): boo
     $fromAddress = get_setting('mail_from_address', $defaults['from_address']);
     $transport = strtolower((string) get_setting('mail_transport', 'mail'));
 
-    $appendMailLog = static function (?string $note, ?\Throwable $error = null) use ($to, $subject, $body): void {
+    $textBody = str_replace(["\r\n", "\r"], "\n", trim($textBody));
+    $htmlBody = $htmlBody !== null ? trim($htmlBody) : null;
+
+    if ($htmlBody !== null && $textBody === '') {
+        $textBody = email_html_to_text($htmlBody);
+    }
+
+    $normalizedText = $textBody === '' ? '(no content)' : $textBody;
+    $normalizedHtml = $htmlBody !== null ? (preg_replace("/\r\n|\r/", "\n", $htmlBody) ?? $htmlBody) : null;
+
+    $appendMailLog = static function (?string $note, ?\Throwable $error = null) use ($to, $subject, $normalizedText, $normalizedHtml): void {
         $logDir = __DIR__ . '/data';
         if (!is_dir($logDir)) {
             mkdir($logDir, 0775, true);
@@ -1689,8 +1794,11 @@ function send_notification_email(string $to, string $subject, string $body): boo
             (new \DateTimeImmutable())->format('c'),
             $to,
             $subject,
-            $body
+            $normalizedText
         );
+        if ($normalizedHtml !== null) {
+            $entry .= "HTML:\n" . $normalizedHtml . "\n";
+        }
         if ($note !== null && $note !== '') {
             $entry .= 'Note: ' . $note . "\n";
         }
@@ -1723,7 +1831,10 @@ function send_notification_email(string $to, string $subject, string $body): boo
                 $email->setFrom($fromAddress, $fromName);
                 $email->setSubject($subject);
                 $email->addTo($to);
-                $email->addContent('text/plain', $body);
+                $email->addContent('text/plain', $normalizedText);
+                if ($normalizedHtml !== null) {
+                    $email->addContent('text/html', $normalizedHtml);
+                }
 
                 $normalizeRegion = static function (string $value): string {
                     $value = strtolower(trim($value));
@@ -1954,8 +2065,15 @@ function send_notification_email(string $to, string $subject, string $body): boo
                 $mailer->setFrom($fromAddress, $fromName);
                 $mailer->addAddress($to);
                 $mailer->Subject = $subject;
-                $mailer->Body = $body;
-                $mailer->AltBody = $body;
+                if ($normalizedHtml !== null) {
+                    $mailer->isHTML(true);
+                    $mailer->Body = $normalizedHtml;
+                    $mailer->AltBody = $normalizedText;
+                } else {
+                    $mailer->isHTML(false);
+                    $mailer->Body = $normalizedText;
+                    $mailer->AltBody = $normalizedText;
+                }
                 $mailer->send();
                 return true;
             } catch (\Throwable $smtpError) {
@@ -1970,10 +2088,25 @@ function send_notification_email(string $to, string $subject, string $body): boo
     $headers = [
         'From: ' . $fromName . ' <' . $fromAddress . '>',
         'Reply-To: ' . $fromAddress,
-        'Content-Type: text/plain; charset=UTF-8'
+        'MIME-Version: 1.0',
     ];
 
-    $success = @mail($to, $subject, $body, implode("\r\n", $headers));
+    if ($normalizedHtml !== null) {
+        $boundary = 'b_' . bin2hex(random_bytes(16));
+        $headers[] = 'Content-Type: multipart/alternative; boundary="' . $boundary . '"';
+        $bodyPayload = '--' . $boundary . "\r\n";
+        $bodyPayload .= "Content-Type: text/plain; charset=UTF-8\r\n\r\n" . $normalizedText . "\r\n";
+        $bodyPayload .= '--' . $boundary . "\r\n";
+        $bodyPayload .= "Content-Type: text/html; charset=UTF-8\r\n\r\n" . $normalizedHtml . "\r\n";
+        $bodyPayload .= '--' . $boundary . "--";
+    } else {
+        $headers[] = 'Content-Type: text/plain; charset=UTF-8';
+        $bodyPayload = $normalizedText;
+    }
+
+    $bodyPayload = str_replace("\n", "\r\n", $bodyPayload);
+
+    $success = @mail($to, $subject, $bodyPayload, implode("\r\n", $headers));
 
     if (!$success) {
         $logFailure();
@@ -2083,4 +2216,172 @@ function format_relative_time(?string $value): string
 
     $years = (int) floor($seconds / 31557600);
     return $future ? sprintf('in %d year%s', $years, $years === 1 ? '' : 's') : sprintf('%d year%s ago', $years, $years === 1 ? '' : 's');
+}
+
+function email_safe(?string $value): string
+{
+    return htmlspecialchars((string) $value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function email_split_name(?string $name): array
+{
+    $name = trim((string) $name);
+    if ($name === '') {
+        return ['', ''];
+    }
+
+    $normalized = preg_replace('/\s+/', ' ', $name) ?: $name;
+    $parts = explode(' ', $normalized);
+    if (count($parts) === 1) {
+        return [$parts[0], ''];
+    }
+
+    $first = array_shift($parts);
+    $last = array_pop($parts);
+    return [$first ?? '', $last ?? ''];
+}
+
+function email_client_context(array $user): array
+{
+    $fullName = trim((string) ($user['name'] ?? ''));
+    [$firstName, $lastName] = email_split_name($fullName);
+    if ($firstName === '' && $fullName === '') {
+        $firstName = 'there';
+    }
+
+    $company = trim((string) ($user['company'] ?? ''));
+
+    return [
+        'first_name' => email_safe($firstName),
+        'last_name' => email_safe($lastName),
+        'full_name' => email_safe($fullName !== '' ? $fullName : $firstName),
+        'email' => email_safe($user['email'] ?? ''),
+        'company' => email_safe($company),
+    ];
+}
+
+function email_payment_method_label(?string $method): string
+{
+    $method = strtolower((string) $method);
+    $labels = [
+        'manual' => 'Manual',
+        'paypal' => 'PayPal',
+        'stripe' => 'Stripe',
+        'google_pay' => 'Google Pay',
+        'bank_transfer' => 'Bank transfer',
+    ];
+
+    return $labels[$method] ?? ucfirst($method);
+}
+
+function email_order_items_html(array $items): string
+{
+    if (!$items) {
+        return '';
+    }
+
+    $rows = '';
+    foreach ($items as $item) {
+        $name = email_safe($item['name'] ?? '');
+        $amount = email_safe($item['amount'] ?? '');
+        $rows .= "<tr>\n";
+        $rows .= "    <td style=\"padding:6px 0;\">{$name}</td>\n";
+        $rows .= "    <td class=\"text-right\" style=\"padding:6px 0;\">{$amount}</td>\n";
+        $rows .= "</tr>\n";
+    }
+
+    return $rows;
+}
+
+function email_snippet(string $text, int $length = 140): string
+{
+    $text = trim(preg_replace('/\s+/', ' ', $text));
+    if ($text === '') {
+        return '';
+    }
+
+    if (function_exists('mb_strlen')) {
+        if (mb_strlen($text, 'UTF-8') > $length) {
+            $text = mb_substr($text, 0, $length - 1, 'UTF-8') . '…';
+        }
+    } elseif (strlen($text) > $length) {
+        $text = substr($text, 0, $length - 1) . '…';
+    }
+
+    return $text;
+}
+
+function email_brand_context(): array
+{
+    $company = get_setting('company_name', 'Service Portal');
+    $logoSetting = trim((string) get_setting('brand_logo_url', ''));
+    $logoUrl = $logoSetting !== '' ? asset_url($logoSetting) : '';
+    if ($logoUrl !== '' && !preg_match('#^(?:https?:)?//#i', $logoUrl)) {
+        $logoUrl = absolute_url($logoUrl);
+    }
+
+    $brandUrl = trim((string) get_setting('brand_url', ''));
+    if ($brandUrl === '') {
+        $brandUrl = absolute_url('/');
+    }
+
+    $supportUrl = trim((string) get_setting('brand_support_url', ''));
+    if ($supportUrl === '') {
+        $supportUrl = $brandUrl;
+    }
+
+    $supportEmail = trim((string) get_setting('support_email', ''));
+    if ($supportEmail === '') {
+        $supportEmail = get_setting('mail_from_address', 'no-reply@example.com');
+    }
+
+    $address = trim((string) get_setting('brand_address', ''));
+    $addressHtml = $address !== '' ? nl2br(email_safe($address)) : '';
+
+    return [
+        'name' => email_safe($company),
+        'logo_url' => email_safe($logoUrl),
+        'url' => email_safe($brandUrl),
+        'email' => email_safe($supportEmail),
+        'address' => $addressHtml,
+        'address_text' => $address,
+        'support_url' => email_safe($supportUrl),
+    ];
+}
+
+function email_flatten_context(array $context, string $prefix = ''): array
+{
+    $result = [];
+    foreach ($context as $key => $value) {
+        if (is_string($key) && str_starts_with($key, '{{') && substr($key, -2) === '}}') {
+            $result[$key] = (string) $value;
+            continue;
+        }
+
+        if (!is_string($key) || $key === '') {
+            continue;
+        }
+
+        $path = $prefix === '' ? $key : $prefix . '.' . $key;
+
+        if (is_array($value)) {
+            $result = array_merge($result, email_flatten_context($value, $path));
+            continue;
+        }
+
+        $result['{{' . $path . '}}'] = (string) $value;
+    }
+
+    return $result;
+}
+
+function email_html_to_text(string $html): string
+{
+    $html = preg_replace('#<(script|style)[^>]*>.*?</\1>#is', '', $html) ?? $html;
+    $html = preg_replace('#<br\s*/?>#i', "\n", $html) ?? $html;
+    $html = preg_replace('#</(p|div|section|article|header|footer|table|tr)>#i', "\n", $html) ?? $html;
+    $text = strip_tags($html);
+    $text = html_entity_decode($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $text = preg_replace("/\n{3,}/", "\n\n", $text) ?? $text;
+    return trim($text);
 }
