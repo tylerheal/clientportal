@@ -1189,12 +1189,22 @@ if (is_post()) {
                 require_login('admin');
                 $orderId = (int) ($_POST['order_id'] ?? 0);
                 $status = trim($_POST['payment_status'] ?? 'pending');
+                $fulfilmentStatus = trim($_POST['fulfilment_status'] ?? 'open');
                 $reference = trim($_POST['payment_reference'] ?? '');
+                $allowedPaymentStatuses = ['pending', 'paid', 'failed'];
+                if (!in_array($status, $allowedPaymentStatuses, true)) {
+                    $status = 'pending';
+                }
+                $allowedFulfilmentStatuses = ['open', 'in_progress', 'complete'];
+                if (!in_array($fulfilmentStatus, $allowedFulfilmentStatuses, true)) {
+                    $fulfilmentStatus = 'open';
+                }
                 if ($orderId > 0) {
                     $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
-                    $pdo->prepare('UPDATE orders SET payment_status = :status, payment_reference = :reference, updated_at = :updated_at WHERE id = :id')
+                    $pdo->prepare('UPDATE orders SET payment_status = :status, fulfilment_status = :fulfilment_status, payment_reference = :reference, updated_at = :updated_at WHERE id = :id')
                         ->execute([
                             'status' => $status,
+                            'fulfilment_status' => $fulfilmentStatus,
                             'reference' => $reference,
                             'updated_at' => $now,
                             'id' => $orderId,

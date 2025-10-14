@@ -1412,6 +1412,36 @@
         });
     }
 
+    const rowLinks = Array.from(doc.querySelectorAll('[data-row-link]'));
+    if (rowLinks.length) {
+        const isInteractiveElement = (element) => {
+            return Boolean(element.closest('a, button, input, select, textarea, label, [data-row-link-exempt]'));
+        };
+
+        const navigate = (row) => {
+            const href = row.getAttribute('data-row-link');
+            if (href) {
+                window.location.href = href;
+            }
+        };
+
+        rowLinks.forEach((row) => {
+            row.addEventListener('click', (event) => {
+                if (isInteractiveElement(event.target)) {
+                    return;
+                }
+                navigate(row);
+            });
+
+            row.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    navigate(row);
+                }
+            });
+        });
+    }
+
     bootstrapChart();
 
     window.PortalDashboard = {

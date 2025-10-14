@@ -16,7 +16,8 @@
             <h2>Order #<?= (int) $selectedOrder['id']; ?></h2>
             <p><?= e($selectedOrder['service_name']); ?> · <?= e($selectedOrder['client_name']); ?></p>
         </div>
-        <div class="page-actions">
+        <div class="page-actions order-status">
+            <span class="badge badge--<?= e($selectedOrder['fulfilment_status']); ?>"><?= e(format_fulfilment_status($selectedOrder['fulfilment_status'])); ?></span>
             <span class="badge badge--<?= e($selectedOrder['payment_status']); ?>"><?= e(ucfirst($selectedOrder['payment_status'])); ?></span>
         </div>
     </header>
@@ -72,6 +73,10 @@
                 <h3>Summary</h3>
                 <dl class="order-meta">
                     <div class="order-meta__row">
+                        <dt>Fulfilment status</dt>
+                        <dd><?= e(format_fulfilment_status($selectedOrder['fulfilment_status'])); ?></dd>
+                    </div>
+                    <div class="order-meta__row">
                         <dt>Total</dt>
                         <dd><?= format_currency((float) $selectedOrder['total_amount']); ?></dd>
                     </div>
@@ -122,6 +127,14 @@
                     <input type="hidden" name="action" value="update_order_status">
                     <input type="hidden" name="order_id" value="<?= (int) $selectedOrder['id']; ?>">
                     <input type="hidden" name="redirect" value="admin/orders/<?= (int) $selectedOrder['id']; ?>">
+                    <label>
+                        <span>Fulfilment status</span>
+                        <select name="fulfilment_status">
+                            <option value="open" <?= $selectedOrder['fulfilment_status'] === 'open' ? 'selected' : ''; ?>>Open</option>
+                            <option value="in_progress" <?= $selectedOrder['fulfilment_status'] === 'in_progress' ? 'selected' : ''; ?>>In progress</option>
+                            <option value="complete" <?= $selectedOrder['fulfilment_status'] === 'complete' ? 'selected' : ''; ?>>Complete</option>
+                        </select>
+                    </label>
                     <label>
                         <span>Status</span>
                         <select name="payment_status">

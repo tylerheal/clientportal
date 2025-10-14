@@ -30,7 +30,12 @@
                             <td>#<?= (int) $order['id']; ?></td>
                             <td><?= e($order['client_name']); ?></td>
                             <td><?= e($order['service_name']); ?></td>
-                            <td><span class="badge badge--<?= e($order['payment_status']); ?>"><?= e(ucfirst($order['payment_status'])); ?></span></td>
+                            <td>
+                                <div class="table-status">
+                                    <span class="badge badge--<?= e($order['fulfilment_status']); ?>"><?= e(format_fulfilment_status($order['fulfilment_status'])); ?></span>
+                                    <span class="table-subline">Payment: <?= e(ucfirst($order['payment_status'])); ?></span>
+                                </div>
+                            </td>
                             <td><?= format_currency((float) $order['total_amount']); ?></td>
                             <td><?= e(format_datetime($order['created_at'])); ?></td>
                             <td>
@@ -44,6 +49,11 @@
                                             <option value="pending" <?= $order['payment_status'] === 'pending' ? 'selected' : ''; ?>>Pending</option>
                                             <option value="paid" <?= $order['payment_status'] === 'paid' ? 'selected' : ''; ?>>Paid</option>
                                             <option value="failed" <?= $order['payment_status'] === 'failed' ? 'selected' : ''; ?>>Failed</option>
+                                        </select>
+                                        <select name="fulfilment_status">
+                                            <option value="open" <?= $order['fulfilment_status'] === 'open' ? 'selected' : ''; ?>>Open</option>
+                                            <option value="in_progress" <?= $order['fulfilment_status'] === 'in_progress' ? 'selected' : ''; ?>>In progress</option>
+                                            <option value="complete" <?= $order['fulfilment_status'] === 'complete' ? 'selected' : ''; ?>>Complete</option>
                                         </select>
                                         <input type="text" name="payment_reference" value="<?= e($order['payment_reference']); ?>" placeholder="Reference">
                                         <button type="submit" class="button button--ghost">Save</button>

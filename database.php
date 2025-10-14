@@ -64,6 +64,7 @@ function initialise_schema(PDO $pdo): void
         service_id INTEGER NOT NULL,
         payment_method TEXT NOT NULL,
         payment_status TEXT NOT NULL DEFAULT "pending",
+        fulfilment_status TEXT NOT NULL DEFAULT "open",
         total_amount REAL NOT NULL,
         form_data TEXT,
         payment_reference TEXT,
@@ -157,6 +158,7 @@ function initialise_schema(PDO $pdo): void
     )');
 
     ensure_nullable_invoice_subscription($pdo);
+    ensure_order_fulfilment_status($pdo);
     ensure_invoice_sequence_column($pdo);
     ensure_user_payment_columns($pdo);
     ensure_subscription_payment_columns($pdo);
@@ -237,6 +239,20 @@ function ensure_nullable_invoice_subscription(PDO $pdo): void
     } finally {
         $pdo->exec('PRAGMA foreign_keys = ON');
     }
+}
+
+function ensure_order_fulfilment_status(PDO $pdo): void
+{
+    $stmt = $pdo->query('PRAGMA table_info(orders)');
+    $columns = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+    $names = array_map(static fn(array $column): string => (string) ($column['name'] ?? ''), $columns);
+
+    if (in_array('fulfilment_status', $names, true)) {
+        return;
+    }
+
+    $pdo->exec('ALTER TABLE orders ADD COLUMN fulfilment_status TEXT NOT NULL DEFAULT "open"');
+    $pdo->exec('UPDATE orders SET fulfilment_status = "open" WHERE fulfilment_status IS NULL OR fulfilment_status = ""');
 }
 
 function ensure_user_payment_columns(PDO $pdo): void

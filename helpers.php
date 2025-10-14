@@ -328,6 +328,26 @@ function format_currency(float $amount): string
     return $symbol . number_format($amount, 2);
 }
 
+function format_fulfilment_status(?string $status): string
+{
+    $status = strtolower((string) $status);
+    $labels = [
+        'open' => 'Open',
+        'in_progress' => 'In progress',
+        'complete' => 'Complete',
+    ];
+
+    if (isset($labels[$status])) {
+        return $labels[$status];
+    }
+
+    if ($status === '') {
+        return $labels['open'];
+    }
+
+    return ucfirst(str_replace('_', ' ', $status));
+}
+
 function get_setting(string $key, ?string $default = null): ?string
 {
     if (!isset($GLOBALS['__settings_cache'])) {

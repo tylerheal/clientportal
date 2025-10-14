@@ -782,7 +782,7 @@ body.has-search-open {
   padding: 20px 18px;
   text-decoration: none;
   color: inherit;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
 .metric-label {
@@ -806,11 +806,16 @@ body.has-search-open {
   line-height: 1.4;
 }
 
+.metric-tile--link {
+  cursor: pointer;
+}
+
 .metric-tile--link:hover,
 .metric-tile--link:focus-visible {
   border-color: rgba(125, 138, 176, 0.45);
-  box-shadow: 0 5px 25px rgb(8 13 26 / 5%);
+  box-shadow: 0 12px 30px rgb(15 23 42 / 8%);
   transform: translateY(-2px);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(241, 245, 255, 0.85));
   outline: none;
 }
 
@@ -872,6 +877,39 @@ body.has-search-open {
   text-align: left;
 }
 
+.table td > .table-cell-primary,
+.table td > .table-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.table-row {
+  position: relative;
+}
+
+.table-row--link {
+  cursor: pointer;
+}
+
+.table-row--link:focus-visible td,
+.table-row--link:focus td {
+  outline: 2px solid rgba(59, 130, 246, 0.6);
+  outline-offset: -2px;
+}
+
+.table-row--link:focus-visible td:first-child,
+.table-row--link:focus td:first-child {
+  border-top-left-radius: 12px;
+  border-bottom-left-radius: 12px;
+}
+
+.table-row--link:focus-visible td:last-child,
+.table-row--link:focus td:last-child {
+  border-top-right-radius: 12px;
+  border-bottom-right-radius: 12px;
+}
+
 .table th {
   color: var(--muted);
   font-weight: 600;
@@ -931,6 +969,13 @@ body.has-search-open {
   min-width: 160px;
 }
 
+.order-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 @media (min-width: 900px) {
   .order-actions {
     flex-direction: row;
@@ -953,9 +998,14 @@ body.has-search-open {
 }
 
 .table-subline {
+  display: block;
   margin: 6px 0 0;
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+.table-status {
+  align-items: flex-start;
 }
 
 .table-actions {
@@ -1016,6 +1066,16 @@ body.has-search-open {
 .badge--open {
   background: rgba(59, 130, 246, 0.16);
   color: #2563eb;
+}
+
+.badge--in_progress {
+  background: rgba(249, 115, 22, 0.16);
+  color: #c2410c;
+}
+
+.badge--complete {
+  background: rgba(16, 185, 129, 0.18);
+  color: #047857;
 }
 
 .badge--closed {

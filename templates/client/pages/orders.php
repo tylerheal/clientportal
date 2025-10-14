@@ -33,20 +33,25 @@
                         <th>Order</th>
                         <th>Service</th>
                         <th>Placed</th>
-                        <th>Status</th>
+                        <th>Fulfilment</th>
                         <th>Total</th>
                         <th class="text-right">Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($orders as $order): ?>
-                        <tr>
+                        <tr class="table-row table-row--link" data-row-link="<?= e(url_for('dashboard/orders/' . (int) $order['id'])); ?>" tabindex="0" role="link" aria-label="View order #<?= (int) $order['id']; ?>">
                             <td>#<?= (int) $order['id']; ?></td>
                             <td><?= e($order['service_name']); ?></td>
                             <td><?= e(format_datetime($order['created_at'])); ?></td>
-                            <td><span class="badge badge--<?= e($order['payment_status']); ?>"><?= e(ucfirst($order['payment_status'])); ?></span></td>
+                            <td>
+                                <div class="table-status">
+                                    <span class="badge badge--<?= e($order['fulfilment_status']); ?>"><?= e(format_fulfilment_status($order['fulfilment_status'])); ?></span>
+                                    <span class="table-subline">Payment: <?= e(ucfirst($order['payment_status'])); ?></span>
+                                </div>
+                            </td>
                             <td><?= format_currency((float) $order['total_amount']); ?></td>
-                            <td class="text-right"><a class="button button--ghost" href="<?= e(url_for('dashboard/orders/' . (int) $order['id'])); ?>">View</a></td>
+                            <td class="text-right"><a class="button button--ghost" data-row-link-exempt href="<?= e(url_for('dashboard/orders/' . (int) $order['id'])); ?>">View</a></td>
                         </tr>
                     <?php endforeach; ?>
                     <?php if (!$orders): ?>

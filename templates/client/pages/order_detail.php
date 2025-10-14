@@ -16,7 +16,8 @@
             <h2>Order #<?= (int) $clientSelectedOrder['id']; ?></h2>
             <p><?= e($clientSelectedOrder['service_name']); ?></p>
         </div>
-        <div class="page-actions">
+        <div class="page-actions order-status">
+            <span class="badge badge--<?= e($clientSelectedOrder['fulfilment_status']); ?>"><?= e(format_fulfilment_status($clientSelectedOrder['fulfilment_status'])); ?></span>
             <span class="badge badge--<?= e($clientSelectedOrder['payment_status']); ?>"><?= e(ucfirst($clientSelectedOrder['payment_status'])); ?></span>
         </div>
     </header>
@@ -71,6 +72,10 @@
             <section>
                 <h3>Summary</h3>
                 <dl class="order-meta">
+                    <div class="order-meta__row">
+                        <dt>Fulfilment status</dt>
+                        <dd><?= e(format_fulfilment_status($clientSelectedOrder['fulfilment_status'])); ?></dd>
+                    </div>
                     <div class="order-meta__row">
                         <dt>Total</dt>
                         <dd><?= format_currency((float) $clientSelectedOrder['total_amount']); ?></dd>
