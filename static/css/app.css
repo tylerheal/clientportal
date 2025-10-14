@@ -1589,8 +1589,43 @@ label {
   font-size: 0.8rem;
 }
 
+.ticket-detail__header {
+  align-items: flex-start;
+}
+
 .ticket-detail__header h2 {
   margin-bottom: 6px;
+}
+
+.ticket-detail__header .ticket-detail__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.ticket-detail__header .ticket-detail__meta span {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+}
+
+.ticket-detail__header .ticket-detail__meta span + span::before {
+  content: '•';
+  margin: 0 6px;
+  color: rgba(148, 163, 184, 0.6);
+}
+
+.ticket-detail__header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ticket-detail__header-actions .badge {
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .page-back {
@@ -1609,14 +1644,19 @@ label {
 .ticket-layout {
   display: grid;
   gap: 20px;
+  align-items: flex-start;
 }
 
 .order-layout {
   display: grid;
   gap: 20px;
+  align-items: flex-start;
 }
 
 @media (min-width: 960px) {
+  .ticket-layout {
+    grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr);
+  }
   .order-layout {
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   }
@@ -1626,6 +1666,10 @@ label {
 .order-sidebar {
   display: grid;
   gap: 24px;
+}
+
+.order-sidebar {
+  align-self: flex-start;
 }
 
 .order-form {
@@ -1842,25 +1886,124 @@ label {
 
 .ticket-thread {
   display: grid;
-  gap: 18px;
+  gap: 24px;
 }
 
-.ticket-compose-form,
-.ticket-reply {
+.ticket-thread__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ticket-thread__header h3 {
+  margin: 6px 0 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.ticket-thread__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+.ticket-compose-form {
   display: grid;
   gap: 16px;
 }
 
-.ticket-compose-form label,
-.ticket-reply label {
+.ticket-compose-form label {
   display: grid;
   gap: 8px;
   font-weight: 600;
 }
 
-.ticket-compose-form textarea,
-.ticket-reply textarea {
+.ticket-compose-form textarea {
   min-height: 140px;
+}
+
+.ticket-composer {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  display: grid;
+  gap: 16px;
+}
+
+.ticket-composer__prompt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ticket-composer__prompt h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.ticket-composer__prompt p {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.ticket-composer__form {
+  display: grid;
+  gap: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  background: var(--panel-2);
+}
+
+.ticket-composer__form[hidden] {
+  display: none;
+}
+
+.ticket-composer__fields {
+  display: grid;
+  gap: 16px;
+}
+
+.ticket-composer__fields label {
+  display: grid;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.ticket-composer__fields span {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.ticket-composer__fields textarea,
+.ticket-compose-form textarea {
+  min-height: 140px;
+}
+
+.ticket-composer__fields select {
+  min-height: auto;
+}
+
+.ticket-composer__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.ticket-composer.is-open .ticket-composer__prompt button {
+  display: none;
 }
 
 .ticket-messages {
@@ -1872,21 +2015,24 @@ label {
 }
 
 .ticket-message {
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 18px;
+  background: #fff;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 18px;
+  padding: 20px;
   display: grid;
-  gap: 12px;
+  gap: 14px;
+  box-shadow: 0 15px 35px rgba(15, 23, 42, 0.08);
 }
 
 .ticket-message--client {
-  border-color: rgba(123, 63, 242, 0.45);
-  background: rgba(123, 63, 242, 0.16);
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.05);
+  box-shadow: 0 18px 40px rgba(59, 130, 246, 0.18);
 }
 
 .ticket-message--staff {
-  border-color: rgba(148, 163, 184, 0.25);
+  border-color: rgba(148, 163, 184, 0.35);
+  background: #fff;
 }
 
 .ticket-message__meta {
@@ -1914,6 +2060,11 @@ label {
 .ticket-message__author strong {
   display: block;
   color: var(--text);
+}
+
+.ticket-message__meta time {
+  font-size: 0.8rem;
+  color: rgba(148, 163, 184, 0.9);
 }
 
 .ticket-message__body {

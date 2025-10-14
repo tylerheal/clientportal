@@ -1338,6 +1338,60 @@
         return succeeded;
     };
 
+    const ticketComposers = Array.from(doc.querySelectorAll('[data-ticket-composer]'));
+    if (ticketComposers.length) {
+        ticketComposers.forEach((composer) => {
+            const toggle = composer.querySelector('[data-ticket-composer-toggle]');
+            const form = composer.querySelector('[data-ticket-composer-form]');
+            const cancel = composer.querySelector('[data-ticket-composer-cancel]');
+            const textarea = form ? form.querySelector('textarea') : null;
+
+            const openComposer = () => {
+                if (!form) {
+                    return;
+                }
+                composer.classList.add('is-open');
+                form.removeAttribute('hidden');
+                if (textarea) {
+                    window.requestAnimationFrame(() => {
+                        textarea.focus();
+                    });
+                }
+            };
+
+            const closeComposer = () => {
+                if (!form) {
+                    return;
+                }
+                composer.classList.remove('is-open');
+                form.setAttribute('hidden', '');
+                form.reset();
+                const messageFields = Array.from(form.querySelectorAll('textarea'));
+                messageFields.forEach((field) => {
+                    field.value = '';
+                });
+            };
+
+            if (toggle) {
+                toggle.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    if (composer.classList.contains('is-open')) {
+                        closeComposer();
+                    } else {
+                        openComposer();
+                    }
+                });
+            }
+
+            if (cancel) {
+                cancel.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    closeComposer();
+                });
+            }
+        });
+    }
+
     const copyTriggers = Array.from(doc.querySelectorAll('[data-copy-text]'));
     if (copyTriggers.length) {
         copyTriggers.forEach((trigger) => {

@@ -18,14 +18,18 @@
             <h2>
                 <?= $creatingTicket ? 'New support ticket' : e($selectedTicket['subject']); ?>
             </h2>
-            <p>
-                <?= $creatingTicket
-                    ? 'Let us know what you need help with and we\'ll be in touch.'
-                    : 'Ticket #' . (int) $selectedTicket['id'] . ' · ' . e(ucfirst($selectedTicket['status'])); ?>
-            </p>
+            <?php if ($creatingTicket): ?>
+                <p>Let us know what you need help with and we'll be in touch.</p>
+            <?php else: ?>
+                <p class="ticket-detail__meta">
+                    <span>Ticket #<?= (int) $selectedTicket['id']; ?></span>
+                    <span><?= e(ucfirst($selectedTicket['status'])); ?></span>
+                    <span>Updated <?= e(format_relative_time($selectedTicket['updated_at'] ?? $selectedTicket['created_at'])); ?></span>
+                </p>
+            <?php endif; ?>
         </div>
         <?php if (!$creatingTicket): ?>
-            <div class="page-actions">
+            <div class="ticket-detail__header-actions">
                 <?php if ($selectedTicket['status'] !== 'closed'): ?>
                     <form action="<?= e(url_for('dashboard')); ?>" method="post" class="inline-form">
                         <input type="hidden" name="action" value="close_ticket">
@@ -62,6 +66,12 @@
                 </form>
             <?php else: ?>
                 <?php $hasMessages = !empty($selectedMessages); ?>
+                <div class="ticket-thread__header">
+                    <div>
+                        <span class="ticket-thread__label">Conversation</span>
+                        <h3><?= e($companyName); ?> &amp; you</h3>
+                    </div>
+                </div>
                 <ol class="ticket-messages">
                     <?php foreach ($selectedMessages as $message): ?>
                         <?php
@@ -90,16 +100,34 @@
                         </li>
                     <?php endif; ?>
                 </ol>
-                <form action="<?= e(url_for('dashboard')); ?>" method="post" class="ticket-reply">
-                    <input type="hidden" name="action" value="reply_ticket_client">
-                    <input type="hidden" name="ticket_id" value="<?= (int) $selectedTicket['id']; ?>">
-                    <input type="hidden" name="redirect" value="dashboard/tickets/<?= (int) $selectedTicket['id']; ?>">
-                    <label for="ticket-reply">Message</label>
-                    <textarea id="ticket-reply" name="message" rows="5" placeholder="Write your response" required></textarea>
-                    <div class="form-actions">
-                        <button type="submit" class="button button--primary">Send message</button>
+                <div class="ticket-composer" data-ticket-composer>
+                    <div class="ticket-composer__prompt">
+                        <div>
+                            <h4>Reply to support</h4>
+                            <p>Share an update with <?= e($companyName); ?>.</p>
+                        </div>
+                        <button type="button" class="button button--ghost" data-ticket-composer-toggle>Reply</button>
                     </div>
-                </form>
+                    <form
+                        action="<?= e(url_for('dashboard')); ?>"
+                        method="post"
+                        class="ticket-composer__form"
+                        data-ticket-composer-form
+                        hidden
+                    >
+                        <input type="hidden" name="action" value="reply_ticket_client">
+                        <input type="hidden" name="ticket_id" value="<?= (int) $selectedTicket['id']; ?>">
+                        <input type="hidden" name="redirect" value="dashboard/tickets/<?= (int) $selectedTicket['id']; ?>">
+                        <div class="ticket-composer__fields">
+                            <label for="ticket-reply">Message</label>
+                            <textarea id="ticket-reply" name="message" rows="5" placeholder="Write your response" required></textarea>
+                        </div>
+                        <div class="ticket-composer__actions">
+                            <button type="submit" class="button button--primary">Send message</button>
+                            <button type="button" class="button button--ghost" data-ticket-composer-cancel>Cancel</button>
+                        </div>
+                    </form>
+                </div>
             <?php endif; ?>
         </article>
 
