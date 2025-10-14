@@ -64,6 +64,11 @@ if ($view === 'order' && !$orderDetailId && $resourceId > 0) {
     $orderDetailId = $resourceId;
 }
 
+$invoiceDownloadId = null;
+if ($view === 'invoices' && $resourceId > 0 && ($segments[2] ?? '') === 'download') {
+    $invoiceDownloadId = $resourceId;
+}
+
 if ($view === 'services') {
     $requestedSlug = $resourceSegment ? strtolower(preg_replace('/[^a-z\-]/', '', $resourceSegment)) : '';
     if ($requestedSlug === '' && isset($_GET['focus'])) {
@@ -124,6 +129,35 @@ function parse_builder_lines(string $input): string
         ];
     }
     return json_encode($fields, JSON_THROW_ON_ERROR);
+}
+
+if ($invoiceDownloadId) {
+    $invoiceStmt = $pdo->prepare('SELECT i.*, u.name AS client_name FROM invoices i JOIN users u ON u.id = i.user_id WHERE i.id = :id AND (i.user_id = :user OR :is_admin = 1) LIMIT 1');
+    $invoiceStmt->execute([
+        'id' => $invoiceDownloadId,
+        'user' => $user['id'],
+        'is_admin' => is_admin($user) ? 1 : 0,
+    ]);
+    $invoiceRecord = $invoiceStmt->fetch();
+    if (!$invoiceRecord) {
+        http_response_code(404);
+        echo 'Invoice not found.';
+        exit;
+    }
+
+    $pdfPath = generate_invoice_pdf($pdo, (int) $invoiceRecord['id'], true);
+    if (!$pdfPath || !is_file($pdfPath)) {
+        http_response_code(500);
+        echo 'Unable to render invoice PDF.';
+        exit;
+    }
+
+    $invoiceNumber = format_invoice_number($invoiceRecord);
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: inline; filename="' . $invoiceNumber . '.pdf"');
+    header('Content-Length: ' . filesize($pdfPath));
+    readfile($pdfPath);
+    exit;
 }
 
 if (is_post()) {
@@ -448,7 +482,7 @@ if (is_post()) {
                             'number' => email_safe($invoiceNumber),
                             'date' => email_safe($now->format('j M Y')),
                             'due_date' => email_safe($now->modify('+7 days')->format('j M Y')),
-                            'url' => email_safe(absolute_url('dashboard/invoices')),
+                            'url' => email_safe(absolute_url('dashboard/invoices/1234/download')),
                             'status' => email_safe('Pending'),
                             'total' => email_safe(format_currency(199.00)),
                         ],
@@ -763,6 +797,14 @@ if (is_post()) {
                 $orderId = (int) $pdo->lastInsertId();
 
                 $clientContext = email_client_context($user);
+                $itemsData = [
+                    [
+                        'name' => email_safe($service['name']),
+                        'amount' => email_safe(format_currency($orderTotal)),
+                        'qty' => email_safe('1'),
+                        'unit_price' => email_safe(format_currency($orderTotal)),
+                    ],
+                ];
                 $itemsHtml = email_order_items_html([
                     ['name' => $service['name'], 'amount' => format_currency($orderTotal)],
                 ]);
@@ -778,11 +820,14 @@ if (is_post()) {
                         'subtotal' => email_safe(format_currency($orderTotal)),
                         'vat' => email_safe(format_currency(0.00)),
                         'total' => email_safe(format_currency($orderTotal)),
+                        'currency' => email_safe(currency_code()),
                         'payment_method' => email_safe(email_payment_method_label($paymentMethod)),
+                        'items' => $itemsData,
                         'items_html' => $itemsHtml,
                     ],
                     'service' => email_safe($service['name']),
                     'name' => $clientContext['full_name'],
+                    '{{items_html}}' => $itemsHtml,
                 ];
                 $fallbackOrderBody = sprintf("Hi %s,\n\nThanks for your order of %s.", $user['name'], $service['name']);
                 send_templated_email($pdo, 'order_confirmation', $clientOrderContext, $user['email'], 'Order received', $fallbackOrderBody);
@@ -796,9 +841,11 @@ if (is_post()) {
                         'url' => email_safe(absolute_url('admin/orders/' . $orderId)),
                         'total' => email_safe(format_currency($orderTotal)),
                         'payment_method' => email_safe(email_payment_method_label($paymentMethod)),
+                        'items' => $itemsData,
                         'items_html' => $itemsHtml,
                     ],
                     'service' => email_safe($service['name']),
+                    '{{items_html}}' => $itemsHtml,
                 ];
                 notify_admins($pdo, 'New order #' . $orderId . ' from ' . $user['name'], url_for('admin/orders/' . $orderId), 'admin_new_order', $adminOrderContext);
                 record_notification($pdo, $user['id'], 'Order #' . $orderId . ' placed for ' . $service['name'], url_for('dashboard/orders'));
@@ -836,6 +883,7 @@ if (is_post()) {
                     'sequence' => $invoiceSequence,
                 ]);
                 $invoiceId = (int) $pdo->lastInsertId();
+                generate_invoice_pdf($pdo, $invoiceId);
 
                 $response = [
                     'invoice_id' => $invoiceId,
@@ -1271,6 +1319,15 @@ if (is_post()) {
                     $fulfilmentStatus = 'open';
                 }
                 if ($orderId > 0) {
+                    $existingStatusStmt = $pdo->prepare('SELECT payment_status, fulfilment_status FROM orders WHERE id = :id LIMIT 1');
+                    $existingStatusStmt->execute(['id' => $orderId]);
+                    $existingStatus = $existingStatusStmt->fetch(PDO::FETCH_ASSOC);
+                    if (!$existingStatus) {
+                        flash('error', 'Order not found.');
+                        break;
+                    }
+                    $previousPaymentStatus = strtolower((string) ($existingStatus['payment_status'] ?? 'pending'));
+                    $previousFulfilmentStatus = strtolower((string) ($existingStatus['fulfilment_status'] ?? 'open'));
                     $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
                     $pdo->prepare('UPDATE orders SET payment_status = :status, fulfilment_status = :fulfilment_status, payment_reference = :reference, updated_at = :updated_at WHERE id = :id')
                         ->execute([
@@ -1280,7 +1337,9 @@ if (is_post()) {
                             'updated_at' => $now,
                             'id' => $orderId,
                         ]);
-                    if ($status === 'paid') {
+                    $paymentStatusChangedToPaid = $status === 'paid' && $previousPaymentStatus !== 'paid';
+                    $fulfilmentStatusChangedToComplete = $fulfilmentStatus === 'complete' && $previousFulfilmentStatus !== 'complete';
+                    if ($paymentStatusChangedToPaid) {
                         $invoiceStmt = $pdo->prepare('UPDATE invoices SET status = "paid", paid_at = :paid_at, updated_at = :updated WHERE order_id = :order_id');
                         $invoiceStmt->execute([
                             'paid_at' => $now,
@@ -1290,11 +1349,14 @@ if (is_post()) {
                         $orderUser = $pdo->prepare('SELECT u.id AS user_id, u.email, u.name, s.name AS service_name, i.id AS invoice_id FROM orders o JOIN users u ON u.id = o.user_id JOIN services s ON s.id = o.service_id LEFT JOIN invoices i ON i.order_id = o.id WHERE o.id = :id LIMIT 1');
                         $orderUser->execute(['id' => $orderId]);
                         if ($row = $orderUser->fetch()) {
+                            $invoiceRow = null;
                             $invoiceLabel = null;
                             if (!empty($row['invoice_id'])) {
                                 $invoiceRefStmt = $pdo->prepare('SELECT i.*, u.name AS client_name FROM invoices i JOIN users u ON u.id = i.user_id WHERE i.id = :id LIMIT 1');
                                 $invoiceRefStmt->execute(['id' => $row['invoice_id']]);
-                                if ($invoiceRow = $invoiceRefStmt->fetch()) {
+                                $fetchedInvoice = $invoiceRefStmt->fetch();
+                                if ($fetchedInvoice) {
+                                    $invoiceRow = $fetchedInvoice;
                                     $invoiceLabel = format_invoice_number($invoiceRow);
                                 }
                             }
@@ -1303,17 +1365,26 @@ if (is_post()) {
                             $invoiceDate = $invoiceRow['created_at'] ?? null;
                             $invoiceDue = $invoiceRow['due_at'] ?? null;
                             $invoiceTotal = isset($invoiceRow['total']) ? (float) $invoiceRow['total'] : (float) $row['total_amount'];
+                            $invoiceIdForLink = $invoiceRow['id'] ?? null;
                             $invoiceContext = [
                                 'number' => email_safe($invoiceLabel ?? 'Invoice'),
                                 'date' => email_safe($invoiceDate ? (new DateTimeImmutable($invoiceDate))->format('j M Y') : (new DateTimeImmutable())->format('j M Y')),
                                 'due_date' => email_safe($invoiceDue ? (new DateTimeImmutable($invoiceDue))->format('j M Y') : ''),
-                                'url' => email_safe(absolute_url('dashboard/invoices')),
+                                'url' => email_safe($invoiceIdForLink ? absolute_url('dashboard/invoices/' . $invoiceIdForLink . '/download') : absolute_url('dashboard/invoices')),
                                 'status' => email_safe('Paid'),
                                 'total' => email_safe(format_currency($invoiceTotal)),
                             ];
                             $orderItemsHtml = email_order_items_html([
                                 ['name' => $row['service_name'], 'amount' => format_currency($invoiceTotal)],
                             ]);
+                            $itemsData = [
+                                [
+                                    'name' => email_safe($row['service_name']),
+                                    'amount' => email_safe(format_currency($invoiceTotal)),
+                                    'qty' => email_safe('1'),
+                                    'unit_price' => email_safe(format_currency($invoiceTotal)),
+                                ],
+                            ];
                             $paymentBody = sprintf(
                                 "Hi %s,\n\nWe've recorded your payment for invoice %s covering %s.",
                                 $row['name'],
@@ -1324,19 +1395,82 @@ if (is_post()) {
                                 'client' => $clientInfo,
                                 'invoice' => $invoiceContext,
                                 'order' => [
+                                    'items' => $itemsData,
                                     'items_html' => $orderItemsHtml,
                                     'total' => email_safe(format_currency($invoiceTotal)),
+                                    'currency' => email_safe(currency_code()),
                                 ],
                                 'service' => email_safe($row['service_name']),
                                 'name' => $clientInfo['full_name'],
                             ];
-                            send_templated_email($pdo, 'invoice_payment_success', $clientPaymentContext, $row['email'], 'Payment received', $paymentBody);
+                            $manualAttachments = [];
+                            if ($invoiceRow) {
+                                $pdfPath = generate_invoice_pdf($pdo, (int) $invoiceRow['id'], true);
+                                if ($pdfPath && is_file($pdfPath)) {
+                                    $manualAttachments[] = [
+                                        'path' => $pdfPath,
+                                        'filename' => ($invoiceLabel ?? 'invoice') . '.pdf',
+                                        'type' => 'application/pdf',
+                                    ];
+                                }
+                            }
+                            send_templated_email($pdo, 'invoice_payment_success', $clientPaymentContext, $row['email'], 'Payment received', $paymentBody, $manualAttachments);
 
                             if ($invoiceLabel) {
                                 record_notification($pdo, (int) $row['user_id'], 'Invoice ' . $invoiceLabel . ' paid successfully.', url_for('dashboard/orders'));
                             } else {
                                 record_notification($pdo, (int) $row['user_id'], 'Invoice payment recorded successfully.', url_for('dashboard/orders'));
                             }
+                        }
+                    }
+                    if ($fulfilmentStatusChangedToComplete) {
+                        $orderDetailsStmt = $pdo->prepare('SELECT o.*, u.email, u.name, u.id AS user_id, s.name AS service_name FROM orders o JOIN users u ON u.id = o.user_id JOIN services s ON s.id = o.service_id WHERE o.id = :id LIMIT 1');
+                        $orderDetailsStmt->execute(['id' => $orderId]);
+                        if ($orderDetails = $orderDetailsStmt->fetch()) {
+                            $clientInfo = email_client_context(['name' => $orderDetails['name'], 'email' => $orderDetails['email']]);
+                            $orderTotal = isset($orderDetails['total_amount']) ? (float) $orderDetails['total_amount'] : 0.0;
+                            $itemsData = [
+                                [
+                                    'name' => email_safe($orderDetails['service_name']),
+                                    'amount' => email_safe(format_currency($orderTotal)),
+                                    'qty' => email_safe('1'),
+                                    'unit_price' => email_safe(format_currency($orderTotal)),
+                                ],
+                            ];
+                            $itemsHtml = email_order_items_html([
+                                ['name' => $orderDetails['service_name'], 'amount' => format_currency($orderTotal)],
+                            ]);
+                            $orderUrl = absolute_url('dashboard/orders/' . $orderId);
+                            $completeBody = sprintf(
+                                "Hi %s,\n\nWe've completed your order for %s. You can review the deliverables in the portal.",
+                                $orderDetails['name'],
+                                $orderDetails['service_name']
+                            );
+                            $completionContext = [
+                                'client' => $clientInfo,
+                                'order' => [
+                                    'id' => email_safe((string) $orderId),
+                                    'number' => email_safe('#' . $orderId),
+                                    'url' => email_safe($orderUrl),
+                                    'total' => email_safe(format_currency($orderTotal)),
+                                    'items' => $itemsData,
+                                    'items_html' => $itemsHtml,
+                                    'currency' => email_safe(currency_code()),
+                                    'payment_method' => email_safe(email_payment_method_label($orderDetails['payment_method'] ?? 'manual')),
+                                ],
+                                'service' => email_safe($orderDetails['service_name']),
+                                'completion' => [
+                                    'summary' => email_safe('All work for ' . $orderDetails['service_name'] . ' is finished.'),
+                                    'next_steps' => email_safe('Review the deliverables and reply if any tweaks are needed.'),
+                                    'links' => email_safe($orderUrl),
+                                ],
+                                'name' => $clientInfo['full_name'],
+                                '{{items_html}}' => $itemsHtml,
+                            ];
+                            if (!empty($orderDetails['email'])) {
+                                send_templated_email($pdo, 'client_order_completed', $completionContext, $orderDetails['email'], 'Order complete', $completeBody);
+                            }
+                            record_notification($pdo, (int) $orderDetails['user_id'], 'Order #' . $orderId . ' marked complete.', url_for('dashboard/orders/' . $orderId));
                         }
                     }
                     flash('success', 'Order updated.');

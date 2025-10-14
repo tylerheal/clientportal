@@ -10,6 +10,7 @@
             <div class="alert alert--<?= $flashType; ?>"><?= e($message); ?></div>
         <?php endif; ?>
     <?php endforeach; ?>
+    <?php [$statusSlug, $statusLabel] = client_order_status($clientSelectedOrder); ?>
     <header class="page-header order-detail__header">
         <div>
             <a class="button button--primary" href="<?= e(url_for('dashboard/orders')); ?>">← Back to orders</a>
@@ -17,8 +18,7 @@
             <p><?= e($clientSelectedOrder['service_name']); ?></p>
         </div>
         <div class="page-actions order-status">
-            <span class="badge badge--<?= e($clientSelectedOrder['fulfilment_status']); ?>"><?= e(format_fulfilment_status($clientSelectedOrder['fulfilment_status'])); ?></span>
-            <span class="badge badge--<?= e($clientSelectedOrder['payment_status']); ?>"><?= e(ucfirst($clientSelectedOrder['payment_status'])); ?></span>
+            <span class="badge badge--<?= e($statusSlug); ?>"><?= e($statusLabel); ?></span>
         </div>
     </header>
     <div class="order-layout">
@@ -73,12 +73,16 @@
                 <h3>Summary</h3>
                 <dl class="order-meta">
                     <div class="order-meta__row">
-                        <dt>Fulfilment status</dt>
-                        <dd><?= e(format_fulfilment_status($clientSelectedOrder['fulfilment_status'])); ?></dd>
+                        <dt>Status</dt>
+                        <dd><?= e($statusLabel); ?></dd>
                     </div>
                     <div class="order-meta__row">
                         <dt>Total</dt>
                         <dd><?= format_currency((float) $clientSelectedOrder['total_amount']); ?></dd>
+                    </div>
+                    <div class="order-meta__row">
+                        <dt>Payment status</dt>
+                        <dd><?= e(ucfirst($clientSelectedOrder['payment_status'])); ?></dd>
                     </div>
                     <div class="order-meta__row">
                         <dt>Payment method</dt>

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="x-ua-compatible" content="ie=edge">
+    <title>Order received – #{{order.id}}</title>
+    <style>
+body{margin:0!important;padding:0!important;background:#f6f7fb;color:#1b1f23;}
+img{border:0;outline:none;text-decoration:none;display:block;max-width:100%;height:auto;}
+table{border-collapse:collapse!important;}
+a{color:#0b5fff;text-decoration:none;}
+.container{width:100%;background:#f6f7fb;padding:24px;}
+.card{max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #eef0f4;border-radius:12px;overflow:hidden;}
+.px{padding-left:24px;padding-right:24px;}
+.py{padding-top:24px;padding-bottom:24px;}
+.muted{color:#6a7380;}
+.btn{display:inline-block;padding:12px 18px;border-radius:8px;background:#0b5fff;color:#ffffff!important;font-weight:600;}
+.badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#242a36;color:#e7eaf0;font-size:12px;}
+.hr{height:1px;background:#eef0f4;border:none;margin:24px 0;}
+.text-right{text-align:right;}
+.small{font-size:12px;}
+.h1{font-size:20px;line-height:1.4;margin:0 0 8px 0;font-weight:700;color:#101318;}
+.h2{font-size:16px;line-height:1.5;margin:0 0 8px 0;font-weight:700;color:#101318;}
+@media (max-width:480px){
+  .px{padding-left:16px!important;padding-right:16px!important;}
+  .py{padding-top:16px!important;padding-bottom:16px!important;}
+  .h1{font-size:18px!important;}
+}
+    </style>
+  </head>
+  <body>
+    <div style="display:none;overflow:hidden;line-height:1px;opacity:0;max-height:0;max-width:0;">Thanks for your order. We’ll email updates as things progress.&#8203;</div>
+    <center class="container">
+      <table role="presentation" class="card" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td class="px py" style="background:#131620;">
+            <table role="presentation" width="100%">
+              <tr>
+                <td style="vertical-align:middle;">
+                  <img src="{{brand.logo_url}}" alt="{{brand.name}}" width="128">
+                </td>
+                <td class="text-right" style="vertical-align:middle;">
+                  <span class="badge">Order #{{order.id}}</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py">
+            <p class="h1">Thanks for your order</p>
+            <p>We’ve received your order <strong>#{{order.id}}</strong> placed on {{order.date}}.</p>
+            <table role="presentation" width="100%" style="width:100%;border:1px solid #eef0f4;border-radius:8px;">
+              <tr><td class="px py">
+                <p class="h2">Items</p>
+                {{#order.items}}
+                <table role="presentation" width="100%" style="margin-bottom:8px;">
+                  <tr>
+                    <td style="padding:6px 0;">{{name}}</td>
+                    <td class="text-right" style="padding:6px 0;">{{amount}}</td>
+                  </tr>
+                </table>
+                {{/order.items}}
+                <hr class="hr">
+                <table role="presentation" width="100%">
+                  <tr><td class="muted">Subtotal</td><td class="text-right">{{order.subtotal}}</td></tr>
+                  <tr><td class="muted">VAT</td><td class="text-right">{{order.vat}}</td></tr>
+                  <tr><td><strong>Total</strong></td><td class="text-right"><strong>{{order.total}}</strong></td></tr>
+                </table>
+              </td></tr>
+            </table>
+            <p style="margin:24px 0;"><a class="btn" href="{{order.url}}">View Order</a></p>
+            <p class="small muted">Payment method: {{order.payment_method}}</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="px py" style="background:#ffffff;">
+            <hr class="hr">
+            <p class="small muted" style="margin:0 0 6px 0;">
+              {{brand.name}} • <a href="{{brand.url}}">{{brand.url}}</a> • <a href="mailto:{{brand.email}}">{{brand.email}}</a>
+            </p>
+            <p class="small muted" style="margin:0 0 6px 0;">{{brand.address}}</p>
+            <p class="small muted" style="margin:0;">You’re receiving this because you have an account with {{brand.name}}. <a href="{{brand.support_url}}">Get help</a>.</p>
+          </td>
+        </tr>
+      </table>
+    </center>
+  </body>
+</html>

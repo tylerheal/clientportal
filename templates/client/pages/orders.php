@@ -33,7 +33,7 @@
                         <th>Order</th>
                         <th>Service</th>
                         <th>Placed</th>
-                        <th>Fulfilment</th>
+                        <th>Status</th>
                         <th>Total</th>
                         <th class="text-right">Action</th>
                     </tr>
@@ -45,10 +45,8 @@
                             <td><?= e($order['service_name']); ?></td>
                             <td><?= e(format_datetime($order['created_at'])); ?></td>
                             <td>
-                                <div class="table-status">
-                                    <span class="badge badge--<?= e($order['fulfilment_status']); ?>"><?= e(format_fulfilment_status($order['fulfilment_status'])); ?></span>
-                                    <span class="table-subline">Payment: <?= e(ucfirst($order['payment_status'])); ?></span>
-                                </div>
+                                <?php [$statusSlug, $statusLabel] = client_order_status($order); ?>
+                                <span class="badge badge--<?= e($statusSlug); ?>"><?= e($statusLabel); ?></span>
                             </td>
                             <td><?= format_currency((float) $order['total_amount']); ?></td>
                             <td class="text-right"><a class="button button--ghost" data-row-link-exempt href="<?= e(url_for('dashboard/orders/' . (int) $order['id'])); ?>">View</a></td>

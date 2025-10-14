@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Invoice {{invoice.number}}</title>
+<style>
+  :root{--accent:#0b5fff;--ink:#101318;--muted:#6a7380;--line:#eef0f4;--paper:#ffffff;--bg:#f6f7fb;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}
+  .page{max-width:780px;margin:24px auto;background:var(--paper);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+  header{display:flex;gap:16px;align-items:center;justify-content:space-between;padding:24px;border-bottom:1px solid var(--line);background:#131620;}
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand img{height:40px;width:auto;}
+  .brand h1{margin:0;font-size:18px;color:#e7eaf0;}
+  .meta{font-size:13px;color:#c9d2e3;text-align:right;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:24px;}
+  .panel{border:1px solid var(--line);border-radius:10px;padding:16px;background:#fafbff;}
+  h2{font-size:14px;margin:0 0 8px 0;}
+  table{width:100%;border-collapse:collapse;margin-top:8px;}
+  th,td{padding:10px;border-bottom:1px solid var(--line);text-align:left;}
+  th{font-size:12px;color:var(--muted);font-weight:600;}
+  tfoot td{border-top:1px solid var(--line);}
+  .right{text-align:right;}
+  .total-row td{font-weight:700;}
+  .notes{padding:24px;border-top:1px solid var(--line);color:var(--muted);font-size:13px;}
+  .stamp{color:#fff;background:var(--accent);padding:6px 10px;border-radius:999px;font-size:12px;}
+  @media print{body{background:#fff}.page{border:none;border-radius:0;margin:0;}}
+</style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <div class="brand">
+        <img src="{{brand.logo_url}}" alt="{{brand.name}}">
+        <h1>Invoice</h1>
+      </div>
+      <div class="meta">
+        <div><strong>#{{invoice.number}}</strong></div>
+        <div>Date: {{invoice.date}}</div>
+        <div>Due: {{invoice.due_date}}</div>
+        <div><span class="stamp">{{invoice.status}}</span></div>
+      </div>
+    </header>
+    <div class="grid">
+      <div class="panel">
+        <h2>From</h2>
+        <div>{{brand.name}}<br>{{brand.address}}<br><a href="mailto:{{brand.email}}">{{brand.email}}</a><br>{{brand.url}}</div>
+      </div>
+      <div class="panel">
+        <h2>Bill To</h2>
+        <div>{{client.first_name}} {{client.last_name}}<br>{{client.email}}<br>{{client.company}}</div>
+      </div>
+    </div>
+    <div style="padding:0 24px 24px 24px;">
+      <table>
+        <thead>
+          <tr><th>Description</th><th class="right">Qty</th><th class="right">Unit</th><th class="right">Amount</th></tr>
+        </thead>
+        <tbody>
+          {{#order.items}}
+          <tr><td>{{name}}</td><td class="right">{{qty}}</td><td class="right">{{unit_price}}</td><td class="right">{{amount}}</td></tr>
+          {{/order.items}}
+        </tbody>
+        <tfoot>
+          <tr><td colspan="3" class="right">Subtotal</td><td class="right">{{order.subtotal}}</td></tr>
+          <tr><td colspan="3" class="right">VAT</td><td class="right">{{order.vat}}</td></tr>
+          <tr class="total-row"><td colspan="3" class="right">Total</td><td class="right">{{order.total}}</td></tr>
+          <tr><td colspan="4" class="right">Paid via {{order.payment_method}}</td></tr>
+        </tfoot>
+      </table>
+    </div>
+    <div class="notes">
+      <strong>Notes</strong><br>
+      {{order.notes}}
+    </div>
+  </div>
+</body>
+</html>

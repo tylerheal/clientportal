@@ -66,10 +66,8 @@ $recentTickets = array_slice($tickets, 0, 5);
                                     </div>
                                 </td>
                                 <td>
-                                    <div class="table-status">
-                                        <span class="badge badge--<?= e($order['fulfilment_status']); ?>"><?= e(format_fulfilment_status($order['fulfilment_status'])); ?></span>
-                                        <span class="table-subline">Payment: <?= e(ucfirst($order['payment_status'])); ?></span>
-                                    </div>
+                                    <?php [$statusSlug, $statusLabel] = client_order_status($order); ?>
+                                    <span class="badge badge--<?= e($statusSlug); ?>"><?= e($statusLabel); ?></span>
                                 </td>
                                 <td><?= e(format_relative_time($order['created_at'])); ?></td>
                             </tr>

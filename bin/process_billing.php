@@ -28,23 +28,37 @@ foreach ($pending->fetchAll() as $invoice) {
         'number' => email_safe($invoiceNumber),
         'date' => email_safe((new DateTimeImmutable())->format('j M Y')),
         'due_date' => email_safe($dueDate ? (new DateTimeImmutable($dueDate))->format('j M Y') : ''),
-        'url' => email_safe(absolute_url('dashboard/invoices')),
+        'url' => email_safe(absolute_url('dashboard/invoices/' . $invoice['id'] . '/download')),
         'status' => email_safe('Overdue'),
         'total' => email_safe(format_currency((float) $invoice['total'])),
     ];
     $itemsHtml = email_order_items_html([
         ['name' => $invoice['service_name'], 'amount' => format_currency((float) $invoice['total'])],
     ]);
+    generate_invoice_pdf($pdo, (int) $invoice['id'], true);
     $overdueBody = sprintf("Hi %s,\n\nInvoice %s for %s is overdue. Please arrange payment at your earliest convenience.", $invoice['name'], $invoiceNumber, $invoice['service_name']);
     $overdueContext = [
         'client' => $clientInfo,
         'invoice' => $invoiceContext,
         'order' => [
+            'items' => [
+                [
+                    'name' => email_safe($invoice['service_name']),
+                    'amount' => email_safe(format_currency((float) $invoice['total'])),
+                    'qty' => email_safe('1'),
+                    'unit_price' => email_safe(format_currency((float) $invoice['total'])),
+                ],
+            ],
             'items_html' => $itemsHtml,
             'total' => email_safe(format_currency((float) $invoice['total'])),
+            'currency' => email_safe(currency_code()),
+            'payment_method' => email_safe(email_payment_method_label($invoice['payment_method'] ?? 'manual')),
+            'url' => email_safe($invoice['order_id'] ? absolute_url('dashboard/orders/' . (int) $invoice['order_id']) : absolute_url('dashboard/orders')),
         ],
         'service' => email_safe($invoice['service_name']),
         'name' => $clientInfo['full_name'],
+        '{{items_html}}' => $itemsHtml,
+        '{{invoice}}' => email_safe($invoiceNumber),
     ];
     send_templated_email($pdo, 'invoice_overdue', $overdueContext, $invoice['email'], 'Invoice overdue', $overdueBody);
     record_notification($pdo, (int) $invoice['user_id'], 'Invoice ' . $invoiceNumber . ' is overdue', url_for('dashboard#invoices'));

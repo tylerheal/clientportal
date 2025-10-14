@@ -61,16 +61,23 @@ $paymentReady = !empty($availability['paypal']) || !empty($availability['stripe'
                             <td><span class="badge badge--<?= e($invoice['status']); ?>" data-invoice-status="<?= (int) $invoice['id']; ?>"><?= e(ucfirst($invoice['status'])); ?></span></td>
                             <td><?= format_currency((float) $invoice['total']); ?></td>
                             <td class="text-right">
-                                <?php
-                                    $method = strtolower($invoice['payment_method'] ?? 'manual');
-                                    $canStripe = !empty($availability['stripe']);
-                                    $canGooglePay = $canStripe && !empty($availability['google_pay']);
-                                    $canPayPal = !empty($availability['paypal']);
+                                <div class="table-actions">
+                                    <?php
+                                        $method = strtolower($invoice['payment_method'] ?? 'manual');
+                                        $canStripe = !empty($availability['stripe']);
+                                        $canGooglePay = $canStripe && !empty($availability['google_pay']);
+                                        $canPayPal = !empty($availability['paypal']);
                                     $supportsStripe = $method === 'stripe' && $canStripe;
                                     $supportsGooglePay = $method === 'google_pay' && $canGooglePay;
                                     $supportsPayPal = $method === 'paypal' && $canPayPal;
                                     $canPayOnline = ($supportsStripe || $supportsGooglePay || $supportsPayPal);
                                 ?>
+                                <a
+                                    class="button button--ghost"
+                                    href="<?= e(url_for('dashboard/invoices/' . $invoice['id'] . '/download')); ?>"
+                                    target="_blank"
+                                    rel="noopener"
+                                >View PDF</a>
                                 <?php if ($invoice['status'] === 'paid'): ?>
                                     <span class="badge badge--paid">Paid</span>
                                 <?php elseif ($canPayOnline): ?>
@@ -89,6 +96,7 @@ $paymentReady = !empty($availability['paypal']) || !empty($availability['stripe'
                                 <?php else: ?>
                                     <span class="badge badge--muted">Awaiting manual payment</span>
                                 <?php endif; ?>
+                                </div>
                             </td>
                         </tr>
                     <?php endforeach; ?>

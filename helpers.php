@@ -348,6 +348,23 @@ function format_fulfilment_status(?string $status): string
     return ucfirst(str_replace('_', ' ', $status));
 }
 
+function client_order_status(array $order): array
+{
+    $fulfilment = strtolower((string) ($order['fulfilment_status'] ?? ''));
+    if ($fulfilment !== '' && $fulfilment !== 'open') {
+        return [$fulfilment, format_fulfilment_status($fulfilment)];
+    }
+
+    $payment = strtolower((string) ($order['payment_status'] ?? ''));
+    if ($payment === '') {
+        $payment = 'pending';
+    }
+
+    $label = ucfirst(str_replace('_', ' ', $payment));
+
+    return [$payment, $label];
+}
+
 function get_setting(string $key, ?string $default = null): ?string
 {
     if (!isset($GLOBALS['__settings_cache'])) {
@@ -913,17 +930,26 @@ function process_subscription_cycle(PDO $pdo, array $subscription, \DateTimeImmu
     if ($invoice) {
         $invoiceNumber = format_invoice_number($invoice);
         $clientInfo = email_client_context(['name' => $invoice['name'], 'email' => $invoice['email']]);
+        $itemsData = [
+            [
+                'name' => email_safe($invoice['service_name']),
+                'amount' => email_safe(format_currency($amount)),
+                'qty' => email_safe('1'),
+                'unit_price' => email_safe(format_currency($amount)),
+            ],
+        ];
         $invoiceContext = [
             'number' => email_safe($invoiceNumber),
             'date' => email_safe($now->format('j M Y')),
             'due_date' => email_safe($dueAt->format('j M Y')),
-            'url' => email_safe(absolute_url('dashboard/invoices')),
+            'url' => email_safe(absolute_url('dashboard/invoices/' . $invoiceId . '/download')),
             'status' => email_safe('Pending'),
             'total' => email_safe(format_currency($amount)),
         ];
         $orderItemsHtml = email_order_items_html([
             ['name' => $invoice['service_name'], 'amount' => format_currency($amount)],
         ]);
+        generate_invoice_pdf($pdo, $invoiceId, true);
         $body = sprintf(
             "Hi %s,\n\nWe've raised invoice %s for %s. The total due is %s and it is payable by %s.",
             $invoice['name'],
@@ -936,11 +962,17 @@ function process_subscription_cycle(PDO $pdo, array $subscription, \DateTimeImmu
             'client' => $clientInfo,
             'invoice' => $invoiceContext,
             'order' => [
+                'items' => $itemsData,
                 'items_html' => $orderItemsHtml,
                 'total' => email_safe(format_currency($amount)),
+                'currency' => email_safe(currency_code()),
+                'payment_method' => email_safe(email_payment_method_label($subscription['payment_method'] ?? $invoice['payment_method'] ?? 'manual')),
+                'url' => email_safe($invoice['order_id'] ? absolute_url('dashboard/orders/' . (int) $invoice['order_id']) : absolute_url('dashboard/orders')),
             ],
             'service' => email_safe($invoice['service_name']),
             'name' => $clientInfo['full_name'],
+            '{{items_html}}' => $orderItemsHtml,
+            '{{invoice}}' => email_safe($invoiceNumber),
         ];
         send_templated_email($pdo, 'invoice_created', $invoiceEmailContext, $invoice['email'], 'New invoice issued', $body);
         record_notification($pdo, (int) $subscription['user_id'], 'Invoice ' . $invoiceNumber . ' generated for ' . $invoice['service_name'], url_for('dashboard#invoices'));
@@ -1339,6 +1371,15 @@ function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, st
     }
 
     $invoiceNumber = format_invoice_number($invoice);
+    $pdfPath = generate_invoice_pdf($pdo, $invoiceId, true);
+    $invoiceAttachments = [];
+    if ($pdfPath && is_file($pdfPath)) {
+        $invoiceAttachments[] = [
+            'path' => $pdfPath,
+            'filename' => $invoiceNumber . '.pdf',
+            'type' => 'application/pdf',
+        ];
+    }
     $clientInfo = email_client_context(['name' => $clientName, 'email' => $clientEmail]);
     $invoiceDate = $invoice['created_at'] ?? null;
     $invoiceDue = $invoice['due_at'] ?? null;
@@ -1346,7 +1387,7 @@ function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, st
         'number' => email_safe($invoiceNumber),
         'date' => email_safe($invoiceDate ? (new DateTimeImmutable($invoiceDate))->format('j M Y') : (new DateTimeImmutable())->format('j M Y')),
         'due_date' => email_safe($invoiceDue ? (new DateTimeImmutable($invoiceDue))->format('j M Y') : ''),
-        'url' => email_safe(absolute_url('dashboard/invoices')),
+        'url' => email_safe(absolute_url('dashboard/invoices/' . $invoiceId . '/download')),
         'status' => email_safe('Paid'),
         'total' => email_safe(format_currency($total)),
     ];
@@ -1369,13 +1410,23 @@ function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, st
             'url' => email_safe(absolute_url('dashboard/orders/' . $orderId)),
             'items_html' => $orderItemsHtml,
             'total' => email_safe(format_currency($total)),
+            'items' => [[
+                'name' => email_safe($serviceName),
+                'amount' => email_safe(format_currency($total)),
+                'qty' => email_safe('1'),
+                'unit_price' => email_safe(format_currency($total)),
+            ]],
+            'currency' => email_safe(currency_code()),
+            'payment_method' => email_safe($paymentMethod),
         ],
         'service' => email_safe($serviceName),
         'name' => $clientInfo['full_name'],
+        '{{items_html}}' => $orderItemsHtml,
+        '{{invoice}}' => email_safe($invoiceNumber),
     ];
 
     if ($clientEmail) {
-        send_templated_email($pdo, 'invoice_payment_success', $clientPaymentContext, $clientEmail, 'Payment received', $body);
+        send_templated_email($pdo, 'invoice_payment_success', $clientPaymentContext, $clientEmail, 'Payment received', $body, $invoiceAttachments);
     }
 
     $adminContext = [
@@ -1386,8 +1437,18 @@ function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, st
             'url' => email_safe(absolute_url('admin/orders/' . $orderId)),
             'items_html' => $orderItemsHtml,
             'total' => email_safe(format_currency($total)),
+            'items' => [[
+                'name' => email_safe($serviceName),
+                'amount' => email_safe(format_currency($total)),
+                'qty' => email_safe('1'),
+                'unit_price' => email_safe(format_currency($total)),
+            ]],
+            'currency' => email_safe(currency_code()),
+            'payment_method' => email_safe($paymentMethod),
         ],
         'service' => email_safe($serviceName),
+        '{{items_html}}' => $orderItemsHtml,
+        '{{invoice}}' => email_safe($invoiceNumber),
     ];
 
     notify_admins($pdo, 'Invoice ' . $invoiceNumber . ' paid by ' . ($clientName !== '' ? $clientName : 'client'), url_for('admin/orders/' . $orderId), 'admin_payment_success', $adminContext);
@@ -1457,6 +1518,128 @@ function format_invoice_number(array $invoice): string
     $initials = invoice_initials((string) $clientName);
     $number = str_pad((string) $sequence, 3, '0', STR_PAD_LEFT);
     return sprintf('INV-%s-%s', $initials, $number);
+}
+
+function invoice_document_directory(): string
+{
+    $dir = __DIR__ . '/data/invoices';
+    if (!is_dir($dir)) {
+        mkdir($dir, 0775, true);
+    }
+    return $dir;
+}
+
+function invoice_document_path(int $invoiceId): string
+{
+    return invoice_document_directory() . '/invoice-' . $invoiceId . '.pdf';
+}
+
+function generate_invoice_pdf(PDO $pdo, int $invoiceId, bool $force = false): ?string
+{
+    if ($invoiceId <= 0) {
+        return null;
+    }
+
+    $path = invoice_document_path($invoiceId);
+    if (!$force && is_file($path)) {
+        return $path;
+    }
+
+    $stmt = $pdo->prepare('SELECT i.*, u.name AS client_name, u.email AS client_email, u.company AS client_company, o.id AS order_id, o.payment_method, o.payment_status, s.name AS service_name FROM invoices i JOIN users u ON u.id = i.user_id LEFT JOIN orders o ON o.id = i.order_id LEFT JOIN services s ON s.id = i.service_id WHERE i.id = :id LIMIT 1');
+    $stmt->execute(['id' => $invoiceId]);
+    $invoice = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$invoice) {
+        return null;
+    }
+
+    $orderId = (int) ($invoice['order_id'] ?? 0);
+    $clientName = $invoice['client_name'] ?? '';
+    $clientEmail = $invoice['client_email'] ?? '';
+    $clientCompany = $invoice['client_company'] ?? '';
+    $serviceName = $invoice['service_name'] ?? 'Service';
+    $total = (float) ($invoice['total'] ?? 0);
+    $subtotal = (float) ($invoice['subtotal'] ?? $total);
+    $vat = (float) ($invoice['vat'] ?? 0);
+    $issuedAt = isset($invoice['created_at']) ? new DateTimeImmutable((string) $invoice['created_at']) : new DateTimeImmutable();
+    $dueAt = isset($invoice['due_at']) && $invoice['due_at'] !== '' ? new DateTimeImmutable((string) $invoice['due_at']) : null;
+    $status = ucfirst(strtolower((string) ($invoice['status'] ?? 'pending')));
+    $paymentMethod = email_payment_method_label($invoice['payment_method'] ?? null);
+    if ($paymentMethod === '') {
+        $paymentMethod = 'Manual';
+    }
+
+    $invoiceNumber = format_invoice_number($invoice);
+    $clientContext = email_client_context([
+        'name' => $clientName,
+        'email' => $clientEmail,
+        'company' => $clientCompany,
+    ]);
+
+    $items = [[
+        'name' => email_safe($serviceName),
+        'qty' => email_safe('1'),
+        'unit_price' => email_safe(format_currency($subtotal > 0 ? $subtotal : $total)),
+        'amount' => email_safe(format_currency($total)),
+    ]];
+
+    $notes = '';
+    if (array_key_exists('notes', $invoice)) {
+        $notes = trim((string) $invoice['notes']);
+    }
+
+    $context = [
+        'brand' => email_brand_context(),
+        'client' => $clientContext,
+        'invoice' => [
+            'number' => email_safe($invoiceNumber),
+            'date' => email_safe($issuedAt->format('j M Y')),
+            'due_date' => email_safe($dueAt ? $dueAt->format('j M Y') : ''),
+            'status' => email_safe($status),
+            'url' => email_safe(absolute_url('dashboard/invoices/' . $invoiceId . '/download')),
+        ],
+        'order' => [
+            'id' => email_safe((string) $orderId),
+            'number' => email_safe('#' . $orderId),
+            'payment_method' => email_safe($paymentMethod),
+            'items' => $items,
+            'subtotal' => email_safe(format_currency($subtotal > 0 ? $subtotal : $total)),
+            'vat' => email_safe(format_currency($vat)),
+            'total' => email_safe(format_currency($total)),
+            'currency' => email_safe(currency_code()),
+            'notes' => email_safe($notes !== '' ? $notes : 'Thank you for your business.'),
+        ],
+    ];
+
+    $template = find_template($pdo, 'invoice_document');
+    if ($template) {
+        $html = email_render_template($template['body'], $context);
+    } else {
+        $html = '<html><body><h1>' . e($invoiceNumber) . '</h1><p>Total: ' . e(format_currency($total)) . '</p></body></html>';
+    }
+
+    if (!class_exists(\Dompdf\Dompdf::class) && file_exists(__DIR__ . '/vendor/autoload.php')) {
+        require_once __DIR__ . '/vendor/autoload.php';
+    }
+
+    if (!class_exists(\Dompdf\Dompdf::class)) {
+        return null;
+    }
+
+    $options = new \Dompdf\Options();
+    $options->set('isRemoteEnabled', true);
+    $options->set('defaultFont', 'Helvetica');
+    $dompdf = new \Dompdf\Dompdf($options);
+    $dompdf->loadHtml($html, 'UTF-8');
+    $dompdf->setPaper('A4', 'portrait');
+    $dompdf->render();
+    $output = $dompdf->output();
+    if ($output === false) {
+        return null;
+    }
+
+    file_put_contents($path, $output);
+    return $path;
 }
 
 function theme_styles(): string
@@ -1562,7 +1745,7 @@ function find_template(PDO $pdo, string $slug): ?array
     return $cache[$slug];
 }
 
-function send_templated_email(PDO $pdo, string $slug, array $context, string $to, string $fallbackSubject, ?string $fallbackBody = null): bool
+function send_templated_email(PDO $pdo, string $slug, array $context, string $to, string $fallbackSubject, ?string $fallbackBody = null, array $attachments = []): bool
 {
     $brand = email_brand_context();
     $baseContext = [
@@ -1572,16 +1755,15 @@ function send_templated_email(PDO $pdo, string $slug, array $context, string $to
     ];
 
     $context = array_replace_recursive($baseContext, $context);
-    $replacements = email_flatten_context($context);
-
+    $subject = email_render_template($fallbackSubject, $context);
+    $textBody = email_render_template($fallbackBody ?? $fallbackSubject, $context);
+    
     $template = find_template($pdo, $slug);
-    $subject = strtr($fallbackSubject, $replacements);
-    $textBody = strtr($fallbackBody ?? $fallbackSubject, $replacements);
     $htmlBody = null;
 
     if ($template) {
-        $subject = strtr($template['subject'], $replacements);
-        $body = strtr($template['body'], $replacements);
+        $subject = email_render_template($template['subject'], $context);
+        $body = email_render_template($template['body'], $context);
         $isHtml = strip_tags($body) !== $body || stripos($body, '<html') !== false || stripos($body, '<table') !== false;
         if ($isHtml) {
             $htmlBody = $body;
@@ -1596,7 +1778,7 @@ function send_templated_email(PDO $pdo, string $slug, array $context, string $to
         $textBody = email_html_to_text($htmlBody);
     }
 
-    return send_notification_email($to, $subject, $textBody, $htmlBody);
+    return send_notification_email($to, $subject, $textBody, $htmlBody, $attachments);
 }
 
 function random_base32(int $length = 32): string
@@ -1766,7 +1948,7 @@ function mark_notifications_read(PDO $pdo, int $userId): void
         ]);
 }
 
-function send_notification_email(string $to, string $subject, string $textBody, ?string $htmlBody = null): bool
+function send_notification_email(string $to, string $subject, string $textBody, ?string $htmlBody = null, array $attachments = []): bool
 {
     $config = require __DIR__ . '/config.php';
     $defaults = $config['mail'];
@@ -1783,6 +1965,46 @@ function send_notification_email(string $to, string $subject, string $textBody, 
 
     $normalizedText = $textBody === '' ? '(no content)' : $textBody;
     $normalizedHtml = $htmlBody !== null ? (preg_replace("/\r\n|\r/", "\n", $htmlBody) ?? $htmlBody) : null;
+
+    $normalizedAttachments = [];
+    foreach ($attachments as $index => $attachment) {
+        if (!is_array($attachment)) {
+            continue;
+        }
+
+        $filename = trim((string) ($attachment['filename'] ?? 'attachment-' . ($index + 1)));
+        if ($filename === '') {
+            $filename = 'attachment-' . ($index + 1);
+        }
+
+        $content = null;
+        if (isset($attachment['content']) && is_string($attachment['content'])) {
+            $content = $attachment['content'];
+        } elseif (isset($attachment['path']) && is_string($attachment['path']) && is_file($attachment['path'])) {
+            $content = file_get_contents($attachment['path']);
+        }
+
+        if ($content === null) {
+            continue;
+        }
+
+        $type = trim((string) ($attachment['type'] ?? 'application/octet-stream'));
+        if ($type === '') {
+            $type = 'application/octet-stream';
+        }
+
+        $disposition = strtolower(trim((string) ($attachment['disposition'] ?? 'attachment')));
+        if (!in_array($disposition, ['attachment', 'inline'], true)) {
+            $disposition = 'attachment';
+        }
+
+        $normalizedAttachments[] = [
+            'filename' => $filename,
+            'content' => $content,
+            'type' => $type,
+            'disposition' => $disposition,
+        ];
+    }
 
     $appendMailLog = static function (?string $note, ?\Throwable $error = null) use ($to, $subject, $normalizedText, $normalizedHtml): void {
         $logDir = __DIR__ . '/data';
@@ -1834,6 +2056,15 @@ function send_notification_email(string $to, string $subject, string $textBody, 
                 $email->addContent('text/plain', $normalizedText);
                 if ($normalizedHtml !== null) {
                     $email->addContent('text/html', $normalizedHtml);
+                }
+
+                foreach ($normalizedAttachments as $attachment) {
+                    $email->addAttachment(
+                        base64_encode($attachment['content']),
+                        $attachment['type'],
+                        $attachment['filename'],
+                        $attachment['disposition']
+                    );
                 }
 
                 $normalizeRegion = static function (string $value): string {
@@ -2074,6 +2305,16 @@ function send_notification_email(string $to, string $subject, string $textBody, 
                     $mailer->Body = $normalizedText;
                     $mailer->AltBody = $normalizedText;
                 }
+
+                foreach ($normalizedAttachments as $attachment) {
+                    $mailer->addStringAttachment(
+                        $attachment['content'],
+                        $attachment['filename'],
+                        'base64',
+                        $attachment['type'],
+                        $attachment['disposition'] === 'inline' ? 'inline' : 'attachment'
+                    );
+                }
                 $mailer->send();
                 return true;
             } catch (\Throwable $smtpError) {
@@ -2091,7 +2332,36 @@ function send_notification_email(string $to, string $subject, string $textBody, 
         'MIME-Version: 1.0',
     ];
 
-    if ($normalizedHtml !== null) {
+    if ($normalizedAttachments) {
+        $mixedBoundary = 'b_mixed_' . bin2hex(random_bytes(16));
+        $headers[] = 'Content-Type: multipart/mixed; boundary="' . $mixedBoundary . '"';
+        $bodyPayload = '';
+
+        if ($normalizedHtml !== null) {
+            $altBoundary = 'b_alt_' . bin2hex(random_bytes(16));
+            $bodyPayload .= '--' . $mixedBoundary . "\r\n";
+            $bodyPayload .= 'Content-Type: multipart/alternative; boundary="' . $altBoundary . '"' . "\r\n\r\n";
+            $bodyPayload .= '--' . $altBoundary . "\r\n";
+            $bodyPayload .= "Content-Type: text/plain; charset=UTF-8\r\n\r\n" . $normalizedText . "\r\n";
+            $bodyPayload .= '--' . $altBoundary . "\r\n";
+            $bodyPayload .= "Content-Type: text/html; charset=UTF-8\r\n\r\n" . $normalizedHtml . "\r\n";
+            $bodyPayload .= '--' . $altBoundary . "--\r\n";
+        } else {
+            $bodyPayload .= '--' . $mixedBoundary . "\r\n";
+            $bodyPayload .= "Content-Type: text/plain; charset=UTF-8\r\n\r\n" . $normalizedText . "\r\n";
+        }
+
+        foreach ($normalizedAttachments as $attachment) {
+            $bodyPayload .= '--' . $mixedBoundary . "\r\n";
+            $bodyPayload .= 'Content-Type: ' . $attachment['type'] . '; name="' . addcslashes($attachment['filename'], '"') . '"' . "\r\n";
+            $bodyPayload .= "Content-Transfer-Encoding: base64\r\n";
+            $bodyPayload .= 'Content-Disposition: ' . $attachment['disposition'] . '; filename="' . addcslashes($attachment['filename'], '"') . '"' . "\r\n\r\n";
+            $bodyPayload .= chunk_split(base64_encode($attachment['content'])) . "\r\n";
+        }
+
+        $bodyPayload .= '--' . $mixedBoundary . "--";
+        $bodyPayload = str_replace("\n", "\r\n", $bodyPayload);
+    } elseif ($normalizedHtml !== null) {
         $boundary = 'b_' . bin2hex(random_bytes(16));
         $headers[] = 'Content-Type: multipart/alternative; boundary="' . $boundary . '"';
         $bodyPayload = '--' . $boundary . "\r\n";
@@ -2099,12 +2369,11 @@ function send_notification_email(string $to, string $subject, string $textBody, 
         $bodyPayload .= '--' . $boundary . "\r\n";
         $bodyPayload .= "Content-Type: text/html; charset=UTF-8\r\n\r\n" . $normalizedHtml . "\r\n";
         $bodyPayload .= '--' . $boundary . "--";
+        $bodyPayload = str_replace("\n", "\r\n", $bodyPayload);
     } else {
         $headers[] = 'Content-Type: text/plain; charset=UTF-8';
-        $bodyPayload = $normalizedText;
+        $bodyPayload = str_replace("\n", "\r\n", $normalizedText);
     }
-
-    $bodyPayload = str_replace("\n", "\r\n", $bodyPayload);
 
     $success = @mail($to, $subject, $bodyPayload, implode("\r\n", $headers));
 
@@ -2358,7 +2627,9 @@ function email_flatten_context(array $context, string $prefix = ''): array
             continue;
         }
 
-        if (!is_string($key) || $key === '') {
+        if (is_int($key)) {
+            $key = (string) $key;
+        } elseif (!is_string($key) || $key === '') {
             continue;
         }
 
@@ -2373,6 +2644,84 @@ function email_flatten_context(array $context, string $prefix = ''): array
     }
 
     return $result;
+}
+
+function email_render_template(string $template, array $context): string
+{
+    $rendered = email_render_sections($template, $context);
+    $replacements = email_flatten_context($context);
+    return strtr($rendered, $replacements);
+}
+
+function email_render_sections(string $template, array $context): string
+{
+    $pattern = "/\{\{#([a-zA-Z0-9_\.]+)\}\}(.*?)\{\{\/\\1\}\}/s";
+    return preg_replace_callback($pattern, static function (array $matches) use ($context): string {
+        $path = $matches[1];
+        $inner = $matches[2];
+        $value = email_context_get($context, $path);
+        if (!is_array($value)) {
+            return '';
+        }
+
+        $result = '';
+        foreach ($value as $key => $item) {
+            $normalizedKey = is_int($key) ? (string) $key : (string) $key;
+            $basePath = $path . '.' . $normalizedKey;
+            $normalizedInner = email_prefix_placeholders($inner, $basePath, $item);
+            $result .= email_render_sections($normalizedInner, $context);
+        }
+
+        return $result;
+    }, $template);
+}
+
+function email_prefix_placeholders(string $template, string $basePath, $item): string
+{
+    return preg_replace_callback('/\{\{([#\/]?)([^}]+)\}\}/', static function (array $matches) use ($basePath, $item): string {
+        $prefix = $matches[1];
+        $token = trim($matches[2]);
+        if ($prefix !== '') {
+            return $matches[0];
+        }
+        if ($token === '') {
+            return $matches[0];
+        }
+        if ($token === '.') {
+            return '{{' . $basePath . '}}';
+        }
+        if (strpos($token, '.') !== false) {
+            return '{{' . $token . '}}';
+        }
+        if (is_array($item) && array_key_exists($token, $item)) {
+            return '{{' . $basePath . '.' . $token . '}}';
+        }
+        return '{{' . $token . '}}';
+    }, $template);
+}
+
+function email_context_get(array $context, string $path)
+{
+    $segments = explode('.', $path);
+    $value = $context;
+    foreach ($segments as $segment) {
+        if (is_array($value) && array_key_exists($segment, $value)) {
+            $value = $value[$segment];
+            continue;
+        }
+
+        if (is_array($value) && ctype_digit($segment)) {
+            $intKey = (int) $segment;
+            if (array_key_exists($intKey, $value)) {
+                $value = $value[$intKey];
+                continue;
+            }
+        }
+
+        return null;
+    }
+
+    return $value;
 }
 
 function email_html_to_text(string $html): string
