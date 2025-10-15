@@ -1381,11 +1381,11 @@ function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, st
     }
 
     $invoiceNumber = format_invoice_number($invoice);
-    $pdfPath = generate_invoice_pdf($pdo, $invoiceId, true);
+    $pdfContent = generate_invoice_pdf($pdo, $invoiceId, true);
     $invoiceAttachments = [];
-    if ($pdfPath && is_file($pdfPath)) {
+    if ($pdfContent !== null) {
         $invoiceAttachments[] = [
-            'path' => $pdfPath,
+            'content' => $pdfContent,
             'filename' => $invoiceNumber . '.pdf',
             'type' => 'application/pdf',
         ];
@@ -1552,11 +1552,6 @@ function invoice_document_directory(): string
     return $primary;
 }
 
-function invoice_document_path(int $invoiceId): string
-{
-    return invoice_document_directory() . '/invoice-' . $invoiceId . '.pdf';
-}
-
 function generate_invoice_download_token(): string
 {
     try {
@@ -1658,11 +1653,6 @@ function generate_invoice_pdf(PDO $pdo, int $invoiceId, bool $force = false): ?s
 {
     if ($invoiceId <= 0) {
         return null;
-    }
-
-    $path = invoice_document_path($invoiceId);
-    if (!$force && is_file($path)) {
-        return $path;
     }
 
     $stmt = $pdo->prepare('SELECT i.*, u.name AS client_name, u.email AS client_email, u.company AS client_company, o.id AS order_id, o.payment_method, o.payment_status, s.name AS service_name FROM invoices i JOIN users u ON u.id = i.user_id LEFT JOIN orders o ON o.id = i.order_id LEFT JOIN services s ON s.id = i.service_id WHERE i.id = :id LIMIT 1');
@@ -1781,11 +1771,7 @@ function generate_invoice_pdf(PDO $pdo, int $invoiceId, bool $force = false): ?s
         return null;
     }
 
-    if (file_put_contents($path, $output) === false) {
-        return null;
-    }
-
-    return is_file($path) ? $path : null;
+    return $output;
 }
 
 function theme_styles(): string
@@ -2678,6 +2664,9 @@ function email_client_context(array $user): array
 function email_payment_method_label(?string $method): string
 {
     $method = strtolower((string) $method);
+    if ($method === '') {
+        $method = 'manual';
+    }
     $labels = [
         'manual' => 'Manual',
         'paypal' => 'PayPal',

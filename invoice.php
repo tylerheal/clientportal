@@ -22,8 +22,8 @@ if (!$invoice) {
     return;
 }
 
-$pdfPath = generate_invoice_pdf($pdo, (int) $invoice['id'], true);
-if (!$pdfPath || !is_file($pdfPath)) {
+$pdfContent = generate_invoice_pdf($pdo, (int) $invoice['id'], true);
+if ($pdfContent === null) {
     http_response_code(500);
     echo 'Unable to render invoice PDF.';
     return;
@@ -36,6 +36,6 @@ if ($filename === '') {
 
 header('Content-Type: application/pdf');
 header('Content-Disposition: inline; filename="' . $filename . '.pdf"');
-header('Content-Length: ' . filesize($pdfPath));
-readfile($pdfPath);
+header('Content-Length: ' . strlen($pdfContent));
+echo $pdfContent;
 exit;

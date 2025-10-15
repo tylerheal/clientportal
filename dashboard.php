@@ -145,8 +145,8 @@ if ($invoiceDownloadId) {
         exit;
     }
 
-    $pdfPath = generate_invoice_pdf($pdo, (int) $invoiceRecord['id'], true);
-    if (!$pdfPath || !is_file($pdfPath)) {
+    $pdfContent = generate_invoice_pdf($pdo, (int) $invoiceRecord['id'], true);
+    if ($pdfContent === null) {
         http_response_code(500);
         echo 'Unable to render invoice PDF.';
         exit;
@@ -155,8 +155,8 @@ if ($invoiceDownloadId) {
     $invoiceNumber = format_invoice_number($invoiceRecord);
     header('Content-Type: application/pdf');
     header('Content-Disposition: inline; filename="' . $invoiceNumber . '.pdf"');
-    header('Content-Length: ' . filesize($pdfPath));
-    readfile($pdfPath);
+    header('Content-Length: ' . strlen($pdfContent));
+    echo $pdfContent;
     exit;
 }
 
@@ -1434,10 +1434,10 @@ if (is_post()) {
                             ];
                             $manualAttachments = [];
                             if ($invoiceRow) {
-                                $pdfPath = generate_invoice_pdf($pdo, (int) $invoiceRow['id'], true);
-                                if ($pdfPath && is_file($pdfPath)) {
+                                $pdfContent = generate_invoice_pdf($pdo, (int) $invoiceRow['id'], true);
+                                if ($pdfContent !== null) {
                                     $manualAttachments[] = [
-                                        'path' => $pdfPath,
+                                        'content' => $pdfContent,
                                         'filename' => ($invoiceLabel ?? 'invoice') . '.pdf',
                                         'type' => 'application/pdf',
                                     ];
