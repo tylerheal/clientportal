@@ -163,6 +163,8 @@ function initialise_schema(PDO $pdo): void
     ensure_user_payment_columns($pdo);
     ensure_subscription_payment_columns($pdo);
     ensure_service_payment_metadata($pdo);
+    ensure_order_events_table($pdo);
+    backfill_order_events($pdo);
 
     $pdo->exec('CREATE TABLE IF NOT EXISTS payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -180,6 +182,103 @@ function initialise_schema(PDO $pdo): void
     seed_default_settings($pdo);
     seed_default_templates($pdo);
     ensure_invoice_template_format($pdo);
+}
+
+function ensure_order_events_table(PDO $pdo): void
+{
+    $pdo->exec('CREATE TABLE IF NOT EXISTS order_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE
+    )');
+
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_order_events_order ON order_events(order_id)');
+}
+
+function backfill_order_events(PDO $pdo): void
+{
+    $tableExists = $pdo->query('SELECT name FROM sqlite_master WHERE type = "table" AND name = "order_events" LIMIT 1');
+    if (!$tableExists || !$tableExists->fetchColumn()) {
+        return;
+    }
+
+    $orders = $pdo->query('SELECT o.*, s.name AS service_name FROM orders o LEFT JOIN services s ON s.id = o.service_id');
+    if (!$orders) {
+        return;
+    }
+
+    $countStmt = $pdo->prepare('SELECT COUNT(*) FROM order_events WHERE order_id = :order');
+    $insertStmt = $pdo->prepare('INSERT INTO order_events (order_id, type, title, description, created_at) VALUES (:order_id, :type, :title, :description, :created_at)');
+    $formatStatus = static function (string $status): string {
+        $status = str_replace(['_', '-'], ' ', strtolower($status));
+        return ucwords($status);
+    };
+    $abbreviateReference = static function (string $value): string {
+        $value = trim($value);
+        if ($value === '') {
+            return '';
+        }
+        if (function_exists('mb_strlen')) {
+            $length = mb_strlen($value, 'UTF-8');
+            if ($length <= 16) {
+                return $value;
+            }
+            return mb_substr($value, 0, 8, 'UTF-8') . '…' . mb_substr($value, -4, null, 'UTF-8');
+        }
+        $length = strlen($value);
+        if ($length <= 16) {
+            return $value;
+        }
+        return substr($value, 0, 8) . '…' . substr($value, -4);
+    };
+
+    foreach ($orders->fetchAll(PDO::FETCH_ASSOC) as $order) {
+        $countStmt->execute(['order' => $order['id']]);
+        if ((int) $countStmt->fetchColumn() > 0) {
+            continue;
+        }
+
+        $createdAt = (string) ($order['created_at'] ?? (new DateTimeImmutable())->format(DateTimeInterface::ATOM));
+        $serviceName = trim((string) ($order['service_name'] ?? ''));
+        $insertStmt->execute([
+            'order_id' => (int) $order['id'],
+            'type' => 'created',
+            'title' => 'Order placed',
+            'description' => $serviceName !== '' ? 'Order submitted for ' . $serviceName : 'Order submitted.',
+            'created_at' => $createdAt,
+        ]);
+
+        $paymentStatus = strtolower((string) ($order['payment_status'] ?? 'pending'));
+        if ($paymentStatus !== 'pending') {
+            $reference = trim((string) ($order['payment_reference'] ?? ''));
+            $insertStmt->execute([
+                'order_id' => (int) $order['id'],
+                'type' => 'payment_' . $paymentStatus,
+                'title' => 'Payment status: ' . ucfirst($paymentStatus),
+                'description' => $reference !== '' ? 'Reference ' . $abbreviateReference($reference) : 'Status updated.',
+                'created_at' => (string) ($order['updated_at'] ?? $createdAt),
+            ]);
+        }
+
+        $fulfilmentStatus = strtolower((string) ($order['fulfilment_status'] ?? 'open'));
+        if ($fulfilmentStatus !== 'open') {
+            $messages = [
+                'in_progress' => 'Our team has started work on this order.',
+                'complete' => 'Order marked complete.',
+            ];
+            $insertStmt->execute([
+                'order_id' => (int) $order['id'],
+                'type' => 'fulfilment_' . $fulfilmentStatus,
+                'title' => 'Fulfilment: ' . $formatStatus($fulfilmentStatus),
+                'description' => $messages[$fulfilmentStatus] ?? 'Status updated.',
+                'created_at' => (string) ($order['updated_at'] ?? $createdAt),
+            ]);
+        }
+    }
 }
 
 function ensure_nullable_invoice_subscription(PDO $pdo): void

@@ -109,8 +109,8 @@
         <aside class="card ticket-sidebar" id="ticket-details">
             <div class="ticket-sidebar__section">
                 <h3>Details</h3>
-                <ul class="ticket-details">
-                    <li>
+                <ul class="ticket-details stacked-list">
+                    <li class="stacked-list__item">
                         <span>Status</span>
                         <span class="ticket-details__value">
                             <span class="badge badge--<?= e($selectedTicket['status']); ?>">
@@ -118,11 +118,11 @@
                             </span>
                         </span>
                     </li>
-                    <li>
+                    <li class="stacked-list__item">
                         <span>Created</span>
                         <span class="ticket-details__value"><?= e(format_datetime($selectedTicket['created_at'])); ?></span>
                     </li>
-                    <li>
+                    <li class="stacked-list__item">
                         <span>Updated</span>
                         <span class="ticket-details__value"><?= e(format_datetime($selectedTicket['updated_at'])); ?></span>
                     </li>
@@ -130,8 +130,8 @@
             </div>
             <div class="ticket-sidebar__section">
                 <h3>Client</h3>
-                <ul class="ticket-people">
-                    <li>
+                <ul class="ticket-people stacked-list">
+                    <li class="stacked-list__item">
                         <div class="avatar"><span><?= e(brand_initials($selectedTicket['client_name'] ?? '', 'CL')); ?></span></div>
                         <div>
                             <strong><?= e($selectedTicket['client_name']); ?></strong>

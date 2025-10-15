@@ -71,28 +71,28 @@
         <aside class="card order-sidebar">
             <section>
                 <h3>Summary</h3>
-                <dl class="order-meta">
-                    <div class="order-meta__row">
+                <dl class="order-meta stacked-list">
+                    <div class="order-meta__row stacked-list__item">
                         <dt>Status</dt>
                         <dd><?= e($statusLabel); ?></dd>
                     </div>
-                    <div class="order-meta__row">
+                    <div class="order-meta__row stacked-list__item">
                         <dt>Total</dt>
                         <dd><?= format_currency((float) $clientSelectedOrder['total_amount']); ?></dd>
                     </div>
-                    <div class="order-meta__row">
+                    <div class="order-meta__row stacked-list__item">
                         <dt>Payment status</dt>
                         <dd><?= e(ucfirst($clientSelectedOrder['payment_status'])); ?></dd>
                     </div>
-                    <div class="order-meta__row">
+                    <div class="order-meta__row stacked-list__item">
                         <dt>Payment method</dt>
                         <dd><?= e(ucwords(str_replace(['_', '-'], ' ', (string) $clientSelectedOrder['payment_method']))); ?></dd>
                     </div>
-                    <div class="order-meta__row">
+                    <div class="order-meta__row stacked-list__item">
                         <dt>Billing interval</dt>
                         <dd><?= e(ucwords(str_replace(['_', '-'], ' ', (string) $clientSelectedOrder['billing_interval']))); ?></dd>
                     </div>
-                    <div class="order-meta__row">
+                    <div class="order-meta__row stacked-list__item">
                         <dt>Payment reference</dt>
                         <dd>
                             <?php if ($clientSelectedOrder['payment_reference']): ?>
@@ -115,11 +115,11 @@
                             <?php endif; ?>
                         </dd>
                     </div>
-                    <div class="order-meta__row">
+                    <div class="order-meta__row stacked-list__item">
                         <dt>Created</dt>
                         <dd><?= e(format_datetime($clientSelectedOrder['created_at'])); ?></dd>
                     </div>
-                    <div class="order-meta__row">
+                    <div class="order-meta__row stacked-list__item">
                         <dt>Updated</dt>
                         <dd><?= e(format_datetime($clientSelectedOrder['updated_at'])); ?></dd>
                     </div>
@@ -148,14 +148,22 @@
                         <?php foreach ($clientSelectedOrderInvoices as $invoice): ?>
                             <?php $invoiceNumber = format_invoice_number($invoice + ['client_name' => $user['name'] ?? '']); ?>
                             <li>
-                                <div>
-                                    <strong>Invoice <?= e($invoiceNumber); ?></strong>
-                                    <span class="badge badge--<?= e($invoice['status']); ?>"><?= e(ucfirst($invoice['status'])); ?></span>
-                                </div>
-                                <div class="order-invoices__meta">
-                                    <span><?= format_currency((float) $invoice['total']); ?></span>
-                                    <time><?= e(format_datetime($invoice['due_at'])); ?></time>
-                                </div>
+                                <a
+                                    class="order-invoices__link"
+                                    href="<?= e(url_for('dashboard/invoices/' . (int) $invoice['id'] . '/download')); ?>"
+                                    target="_blank"
+                                    rel="noopener"
+                                    aria-label="View invoice <?= e($invoiceNumber); ?>"
+                                >
+                                    <div>
+                                        <strong>Invoice <?= e($invoiceNumber); ?></strong>
+                                        <span class="badge badge--<?= e($invoice['status']); ?>"><?= e(ucfirst($invoice['status'])); ?></span>
+                                    </div>
+                                    <div class="order-invoices__meta">
+                                        <span><?= format_currency((float) $invoice['total']); ?></span>
+                                        <time><?= e(format_datetime($invoice['due_at'])); ?></time>
+                                    </div>
+                                </a>
                             </li>
                         <?php endforeach; ?>
                     </ul>

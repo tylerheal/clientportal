@@ -134,8 +134,8 @@
         <aside class="card ticket-sidebar">
             <div class="ticket-sidebar__section">
                 <h3>Details</h3>
-                <ul class="ticket-details">
-                    <li>
+                <ul class="ticket-details stacked-list">
+                    <li class="stacked-list__item">
                         <span>Status</span>
                         <span class="ticket-details__value">
                             <span class="badge badge--<?= e($creatingTicket ? 'open' : $selectedTicket['status']); ?>">
@@ -143,13 +143,13 @@
                             </span>
                         </span>
                     </li>
-                    <li>
+                    <li class="stacked-list__item">
                         <span>Created</span>
                         <span class="ticket-details__value">
                             <?= $creatingTicket ? 'Will be recorded on submit' : e(format_datetime($selectedTicket['created_at'])); ?>
                         </span>
                     </li>
-                    <li>
+                    <li class="stacked-list__item">
                         <span>Updated</span>
                         <span class="ticket-details__value">
                             <?= $creatingTicket ? '—' : e(format_datetime($selectedTicket['updated_at'])); ?>
@@ -159,15 +159,15 @@
             </div>
             <div class="ticket-sidebar__section">
                 <h3>People</h3>
-                <ul class="ticket-people">
-                    <li>
+                <ul class="ticket-people stacked-list">
+                    <li class="stacked-list__item">
                         <div class="avatar"><span><?= e(brand_initials($user['name'] ?? $user['email'] ?? '', 'ME')); ?></span></div>
                         <div>
                             <strong><?= e($user['name'] ?: $user['email']); ?></strong>
                             <span>Requester</span>
                         </div>
                     </li>
-                    <li>
+                    <li class="stacked-list__item">
                         <div class="avatar"><span><?= e(brand_initials($companyName, 'SP')); ?></span></div>
                         <div>
                             <strong><?= e($companyName); ?></strong>

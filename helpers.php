@@ -1329,6 +1329,13 @@ function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, st
         throw $e;
     }
 
+    $paymentLabel = email_payment_method_label($provider);
+    if ($paymentLabel === '') {
+        $paymentLabel = ucfirst($provider);
+    }
+    $referenceSummary = $reference !== '' ? 'Reference ' . abbreviate_reference($reference) : 'Recorded via ' . $paymentLabel . '.';
+    record_order_event($pdo, $orderId, 'payment_paid', 'Payment status: Paid', $referenceSummary, new \DateTimeImmutable($now));
+
     if ($subscriptionId > 0) {
         $pdo->prepare('UPDATE subscriptions SET status = "active", updated_at = :updated WHERE id = :id AND status != "active"')
             ->execute([
@@ -1522,16 +1529,62 @@ function format_invoice_number(array $invoice): string
 
 function invoice_document_directory(): string
 {
-    $dir = __DIR__ . '/data/invoices';
-    if (!is_dir($dir)) {
-        mkdir($dir, 0775, true);
+    $primary = __DIR__ . '/data/invoices';
+    $paths = [$primary];
+    $fallback = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'clientportal-invoices';
+    if (!in_array($fallback, $paths, true)) {
+        $paths[] = $fallback;
     }
-    return $dir;
+
+    foreach ($paths as $path) {
+        if (is_dir($path)) {
+            return $path;
+        }
+        if (@mkdir($path, 0775, true) && is_dir($path)) {
+            return $path;
+        }
+    }
+
+    return $primary;
 }
 
 function invoice_document_path(int $invoiceId): string
 {
     return invoice_document_directory() . '/invoice-' . $invoiceId . '.pdf';
+}
+
+function record_order_event(PDO $pdo, int $orderId, string $type, string $title, ?string $description = null, ?\DateTimeInterface $timestamp = null): void
+{
+    $orderId = (int) $orderId;
+    $type = trim($type);
+    $title = trim($title);
+    if ($orderId <= 0 || $type === '' || $title === '') {
+        return;
+    }
+
+    $createdAt = $timestamp instanceof \DateTimeInterface
+        ? $timestamp->format(\DateTimeInterface::ATOM)
+        : (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
+
+    $existsStmt = $pdo->prepare('SELECT id FROM order_events WHERE order_id = :order AND type = :type AND title = :title AND created_at = :created LIMIT 1');
+    $existsStmt->execute([
+        'order' => $orderId,
+        'type' => $type,
+        'title' => $title,
+        'created' => $createdAt,
+    ]);
+    if ($existsStmt->fetchColumn()) {
+        return;
+    }
+
+    $insert = $pdo->prepare('INSERT INTO order_events (order_id, type, title, description, created_at) VALUES (:order_id, :type, :title, :description, :created_at)');
+    $insert->execute([
+        'order_id' => $orderId,
+        'type' => $type,
+        'title' => $title,
+        'description' => $description !== null && $description !== '' ? $description : null,
+        'created_at' => $createdAt,
+    ]);
 }
 
 function generate_invoice_pdf(PDO $pdo, int $invoiceId, bool $force = false): ?string
@@ -1626,20 +1679,44 @@ function generate_invoice_pdf(PDO $pdo, int $invoiceId, bool $force = false): ?s
         return null;
     }
 
+    $tempDir = invoice_document_directory();
+    if (!is_writable($tempDir)) {
+        $fallbackTemp = sys_get_temp_dir();
+        if (is_writable($fallbackTemp)) {
+            $tempDir = $fallbackTemp;
+        }
+    }
+
     $options = new \Dompdf\Options();
     $options->set('isRemoteEnabled', true);
     $options->set('defaultFont', 'Helvetica');
+    if (method_exists($options, 'setChroot')) {
+        $options->setChroot(__DIR__);
+    }
+    if (method_exists($options, 'setTempDir')) {
+        $options->setTempDir($tempDir);
+    }
+
     $dompdf = new \Dompdf\Dompdf($options);
-    $dompdf->loadHtml($html, 'UTF-8');
-    $dompdf->setPaper('A4', 'portrait');
-    $dompdf->render();
-    $output = $dompdf->output();
+
+    try {
+        $dompdf->loadHtml($html, 'UTF-8');
+        $dompdf->setPaper('A4', 'portrait');
+        $dompdf->render();
+        $output = $dompdf->output();
+    } catch (Throwable $exception) {
+        return null;
+    }
+
     if ($output === false) {
         return null;
     }
 
-    file_put_contents($path, $output);
-    return $path;
+    if (file_put_contents($path, $output) === false) {
+        return null;
+    }
+
+    return is_file($path) ? $path : null;
 }
 
 function theme_styles(): string

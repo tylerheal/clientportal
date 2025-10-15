@@ -884,6 +884,9 @@ if (is_post()) {
                 ]);
                 $invoiceId = (int) $pdo->lastInsertId();
                 generate_invoice_pdf($pdo, $invoiceId);
+                $serviceLabel = trim((string) ($service['name'] ?? ''));
+                $orderSummary = $serviceLabel !== '' ? 'Order submitted for ' . $serviceLabel : 'Order submitted.';
+                record_order_event($pdo, $orderId, 'created', 'Order placed', $orderSummary, $placedAt);
 
                 $response = [
                     'invoice_id' => $invoiceId,
@@ -1319,7 +1322,7 @@ if (is_post()) {
                     $fulfilmentStatus = 'open';
                 }
                 if ($orderId > 0) {
-                    $existingStatusStmt = $pdo->prepare('SELECT payment_status, fulfilment_status FROM orders WHERE id = :id LIMIT 1');
+                    $existingStatusStmt = $pdo->prepare('SELECT payment_status, fulfilment_status, payment_reference FROM orders WHERE id = :id LIMIT 1');
                     $existingStatusStmt->execute(['id' => $orderId]);
                     $existingStatus = $existingStatusStmt->fetch(PDO::FETCH_ASSOC);
                     if (!$existingStatus) {
@@ -1328,6 +1331,7 @@ if (is_post()) {
                     }
                     $previousPaymentStatus = strtolower((string) ($existingStatus['payment_status'] ?? 'pending'));
                     $previousFulfilmentStatus = strtolower((string) ($existingStatus['fulfilment_status'] ?? 'open'));
+                    $previousReference = trim((string) ($existingStatus['payment_reference'] ?? ''));
                     $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
                     $pdo->prepare('UPDATE orders SET payment_status = :status, fulfilment_status = :fulfilment_status, payment_reference = :reference, updated_at = :updated_at WHERE id = :id')
                         ->execute([
@@ -1337,8 +1341,30 @@ if (is_post()) {
                             'updated_at' => $now,
                             'id' => $orderId,
                         ]);
-                    $paymentStatusChangedToPaid = $status === 'paid' && $previousPaymentStatus !== 'paid';
-                    $fulfilmentStatusChangedToComplete = $fulfilmentStatus === 'complete' && $previousFulfilmentStatus !== 'complete';
+                    $eventTimestamp = new \DateTimeImmutable($now);
+                    $paymentStatusChanged = $status !== $previousPaymentStatus;
+                    $fulfilmentStatusChanged = $fulfilmentStatus !== $previousFulfilmentStatus;
+                    $referenceChanged = $reference !== $previousReference;
+                    if ($paymentStatusChanged) {
+                        $paymentSummary = $reference !== '' ? 'Reference ' . abbreviate_reference($reference) : 'Status updated.';
+                        record_order_event($pdo, $orderId, 'payment_' . $status, 'Payment status: ' . ucfirst($status), $paymentSummary, $eventTimestamp);
+                    }
+                    if ($fulfilmentStatusChanged) {
+                        $fulfilmentMessages = [
+                            'open' => 'Order reopened and awaiting work.',
+                            'in_progress' => 'Our team has started work on this order.',
+                            'complete' => 'Order marked complete.',
+                        ];
+                        $fulfilmentTitle = 'Fulfilment: ' . format_fulfilment_status($fulfilmentStatus);
+                        $fulfilmentDescription = $fulfilmentMessages[$fulfilmentStatus] ?? 'Status updated.';
+                        record_order_event($pdo, $orderId, 'fulfilment_' . $fulfilmentStatus, $fulfilmentTitle, $fulfilmentDescription, $eventTimestamp);
+                    } elseif ($referenceChanged && !$paymentStatusChanged) {
+                        $referenceSummary = $reference !== '' ? 'New reference ' . abbreviate_reference($reference) : 'Reference cleared.';
+                        record_order_event($pdo, $orderId, 'reference_updated', 'Payment reference updated', $referenceSummary, $eventTimestamp);
+                    }
+
+                    $paymentStatusChangedToPaid = $paymentStatusChanged && $status === 'paid';
+                    $fulfilmentStatusChangedToComplete = $fulfilmentStatusChanged && $fulfilmentStatus === 'complete';
                     if ($paymentStatusChangedToPaid) {
                         $invoiceStmt = $pdo->prepare('UPDATE invoices SET status = "paid", paid_at = :paid_at, updated_at = :updated WHERE order_id = :order_id');
                         $invoiceStmt->execute([
@@ -1480,6 +1506,21 @@ if (is_post()) {
                 $orderId = (int) ($_POST['order_id'] ?? 0);
                 $reference = trim($_POST['payment_reference'] ?? '');
                 if ($orderId > 0) {
+                    $existingReferenceStmt = $pdo->prepare('SELECT payment_reference FROM orders WHERE id = :id AND user_id = :user LIMIT 1');
+                    $existingReferenceStmt->execute([
+                        'id' => $orderId,
+                        'user' => $user['id'],
+                    ]);
+                    $currentReference = $existingReferenceStmt->fetchColumn();
+                    if ($currentReference === false) {
+                        break;
+                    }
+                    $previousReference = trim((string) $currentReference);
+                    if ($previousReference === $reference) {
+                        flash('success', 'Order updated.');
+                        break;
+                    }
+
                     $now = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
                     $updated = $pdo->prepare('UPDATE orders SET payment_reference = :reference, updated_at = :updated_at WHERE id = :id AND user_id = :user');
                     $updated->execute([
@@ -1488,6 +1529,9 @@ if (is_post()) {
                         'id' => $orderId,
                         'user' => $user['id'],
                     ]);
+
+                    $summary = $reference !== '' ? 'New reference ' . abbreviate_reference($reference) : 'Reference cleared.';
+                    record_order_event($pdo, $orderId, 'reference_updated', 'Payment reference updated', $summary, new \DateTimeImmutable($now));
                     flash('success', 'Order updated.');
                 }
                 break;
@@ -1823,27 +1867,49 @@ if ($user['role'] === 'admin') {
         $invoiceStmt->execute(['order' => $selectedOrder['id']]);
         $selectedOrderInvoices = $invoiceStmt->fetchAll();
 
-        $selectedOrderTimeline[] = [
-            'title' => 'Order created',
-            'description' => 'Order placed for ' . $selectedOrder['service_name'],
-            'timestamp' => $selectedOrder['created_at'],
-        ];
-        if ($selectedOrder['updated_at'] && $selectedOrder['updated_at'] !== $selectedOrder['created_at']) {
+        $eventsStmt = $pdo->prepare('SELECT title, description, created_at FROM order_events WHERE order_id = :order ORDER BY created_at ASC');
+        $eventsStmt->execute(['order' => $selectedOrder['id']]);
+        $orderEvents = $eventsStmt->fetchAll();
+        if ($orderEvents) {
+            foreach ($orderEvents as $event) {
+                $selectedOrderTimeline[] = [
+                    'title' => $event['title'],
+                    'description' => $event['description'] ?? '',
+                    'timestamp' => $event['created_at'],
+                ];
+            }
+        } else {
             $selectedOrderTimeline[] = [
-                'title' => 'Order updated',
-                'description' => 'Order details were updated',
-                'timestamp' => $selectedOrder['updated_at'],
+                'title' => 'Order created',
+                'description' => 'Order placed for ' . $selectedOrder['service_name'],
+                'timestamp' => $selectedOrder['created_at'],
             ];
-        }
-        if ($selectedOrder['payment_status'] !== 'pending') {
-            $referenceSummary = $selectedOrder['payment_reference']
-                ? 'Reference ' . abbreviate_reference((string) $selectedOrder['payment_reference'])
-                : 'Status manually updated';
-            $selectedOrderTimeline[] = [
-                'title' => 'Payment status: ' . ucfirst($selectedOrder['payment_status']),
-                'description' => $referenceSummary,
-                'timestamp' => $selectedOrder['updated_at'] ?: $selectedOrder['created_at'],
-            ];
+            if ($selectedOrder['updated_at'] && $selectedOrder['updated_at'] !== $selectedOrder['created_at']) {
+                $selectedOrderTimeline[] = [
+                    'title' => 'Order updated',
+                    'description' => 'Order details were updated',
+                    'timestamp' => $selectedOrder['updated_at'],
+                ];
+            }
+            if ($selectedOrder['payment_status'] !== 'pending') {
+                $referenceSummary = $selectedOrder['payment_reference']
+                    ? 'Reference ' . abbreviate_reference((string) $selectedOrder['payment_reference'])
+                    : 'Status manually updated';
+                $selectedOrderTimeline[] = [
+                    'title' => 'Payment status: ' . ucfirst($selectedOrder['payment_status']),
+                    'description' => $referenceSummary,
+                    'timestamp' => $selectedOrder['updated_at'] ?: $selectedOrder['created_at'],
+                ];
+            }
+            if ($selectedOrder['fulfilment_status'] !== 'open') {
+                $selectedOrderTimeline[] = [
+                    'title' => 'Fulfilment: ' . format_fulfilment_status($selectedOrder['fulfilment_status']),
+                    'description' => $selectedOrder['fulfilment_status'] === 'complete'
+                        ? 'Order marked complete.'
+                        : ($selectedOrder['fulfilment_status'] === 'in_progress' ? 'Our team has started work on this order.' : 'Status updated.'),
+                    'timestamp' => $selectedOrder['updated_at'] ?: $selectedOrder['created_at'],
+                ];
+            }
         }
         foreach ($selectedOrderInvoices as $invoice) {
             $invoiceTimestamp = $invoice['paid_at'] ?: $invoice['created_at'];
@@ -1988,26 +2054,49 @@ if ($view === 'order') {
     $invoiceStmt->execute(['order' => $clientSelectedOrder['id']]);
     $clientSelectedOrderInvoices = $invoiceStmt->fetchAll();
 
-    $clientSelectedOrderTimeline[] = [
-        'title' => 'Order placed',
-        'description' => 'Order submitted for ' . $clientSelectedOrder['service_name'],
-        'timestamp' => $clientSelectedOrder['created_at'],
-    ];
-
-    if ($clientSelectedOrder['updated_at'] && $clientSelectedOrder['updated_at'] !== $clientSelectedOrder['created_at']) {
+    $clientEventsStmt = $pdo->prepare('SELECT title, description, created_at FROM order_events WHERE order_id = :order ORDER BY created_at ASC');
+    $clientEventsStmt->execute(['order' => $clientSelectedOrder['id']]);
+    $clientOrderEvents = $clientEventsStmt->fetchAll();
+    if ($clientOrderEvents) {
+        foreach ($clientOrderEvents as $event) {
+            $clientSelectedOrderTimeline[] = [
+                'title' => $event['title'],
+                'description' => $event['description'] ?? '',
+                'timestamp' => $event['created_at'],
+            ];
+        }
+    } else {
         $clientSelectedOrderTimeline[] = [
-            'title' => 'Order updated',
-            'description' => 'Details were updated',
-            'timestamp' => $clientSelectedOrder['updated_at'],
+            'title' => 'Order placed',
+            'description' => 'Order submitted for ' . $clientSelectedOrder['service_name'],
+            'timestamp' => $clientSelectedOrder['created_at'],
         ];
-    }
 
-    if ($clientSelectedOrder['payment_status'] !== 'pending') {
-        $clientSelectedOrderTimeline[] = [
-            'title' => 'Payment status: ' . ucfirst($clientSelectedOrder['payment_status']),
-            'description' => $clientSelectedOrder['payment_reference'] ? 'Reference ' . abbreviate_reference((string) $clientSelectedOrder['payment_reference']) : 'Status updated',
-            'timestamp' => $clientSelectedOrder['updated_at'] ?: $clientSelectedOrder['created_at'],
-        ];
+        if ($clientSelectedOrder['updated_at'] && $clientSelectedOrder['updated_at'] !== $clientSelectedOrder['created_at']) {
+            $clientSelectedOrderTimeline[] = [
+                'title' => 'Order updated',
+                'description' => 'Details were updated',
+                'timestamp' => $clientSelectedOrder['updated_at'],
+            ];
+        }
+
+        if ($clientSelectedOrder['payment_status'] !== 'pending') {
+            $clientSelectedOrderTimeline[] = [
+                'title' => 'Payment status: ' . ucfirst($clientSelectedOrder['payment_status']),
+                'description' => $clientSelectedOrder['payment_reference'] ? 'Reference ' . abbreviate_reference((string) $clientSelectedOrder['payment_reference']) : 'Status updated',
+                'timestamp' => $clientSelectedOrder['updated_at'] ?: $clientSelectedOrder['created_at'],
+            ];
+        }
+
+        if ($clientSelectedOrder['fulfilment_status'] !== 'open') {
+            $clientSelectedOrderTimeline[] = [
+                'title' => 'Fulfilment: ' . format_fulfilment_status($clientSelectedOrder['fulfilment_status']),
+                'description' => $clientSelectedOrder['fulfilment_status'] === 'complete'
+                    ? 'Order marked complete.'
+                    : ($clientSelectedOrder['fulfilment_status'] === 'in_progress' ? 'Our team has started work on this order.' : 'Status updated'),
+                'timestamp' => $clientSelectedOrder['updated_at'] ?: $clientSelectedOrder['created_at'],
+            ];
+        }
     }
 
     foreach ($clientSelectedOrderInvoices as $invoice) {
