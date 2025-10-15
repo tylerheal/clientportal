@@ -150,7 +150,7 @@
                             <li>
                                 <a
                                     class="order-invoices__link"
-                                    href="<?= e($invoice['download_url'] ?? url_for('invoice.php?token=' . ($invoice['download_token'] ?? ''))); ?>"
+                                    href="<?= e($invoice['download_url'] ?? url_for('invoice?token=' . ($invoice['download_token'] ?? ''))); ?>"
                                     target="_blank"
                                     rel="noopener"
                                     aria-label="View invoice <?= e($invoiceNumber); ?>"

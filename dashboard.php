@@ -496,7 +496,7 @@ if (is_post()) {
                             'number' => email_safe($invoiceNumber),
                             'date' => email_safe($now->format('j M Y')),
                             'due_date' => email_safe($now->modify('+7 days')->format('j M Y')),
-                            'url' => email_safe(absolute_url('invoice.php?token=EXAMPLE123TOKEN')),
+                            'url' => email_safe(absolute_url('invoice?token=EXAMPLE123TOKEN')),
                             'status' => email_safe('Pending'),
                             'total' => email_safe(format_currency(199.00)),
                         ],

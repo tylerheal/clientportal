@@ -1611,7 +1611,7 @@ function invoice_download_url(PDO $pdo, array &$invoice, bool $absolute = false)
         return $absolute ? absolute_url('dashboard?view=invoices') : url_for('dashboard?view=invoices');
     }
 
-    $path = 'invoice.php?token=' . rawurlencode($token);
+    $path = 'invoice?token=' . rawurlencode($token);
     return $absolute ? absolute_url($path) : url_for($path);
 }
 

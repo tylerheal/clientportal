@@ -161,7 +161,7 @@
                                 <?php $invoiceNumber = format_invoice_number($invoice + ['client_name' => $selectedOrder['client_name'] ?? '']); ?>
                                 <a
                                     class="order-invoices__link"
-                                    href="<?= e($invoice['download_url'] ?? url_for('invoice.php?token=' . ($invoice['download_token'] ?? ''))); ?>"
+                                    href="<?= e($invoice['download_url'] ?? url_for('invoice?token=' . ($invoice['download_token'] ?? ''))); ?>"
                                     target="_blank"
                                     rel="noopener"
                                     aria-label="View invoice <?= e($invoiceNumber); ?>"
