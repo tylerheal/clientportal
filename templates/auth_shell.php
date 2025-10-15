@@ -3,8 +3,10 @@ if (!defined('APP_BOOTSTRAPPED')) {
     require __DIR__ . '/../bootstrap.php';
 }
 $company = get_setting('company_name', 'Service Portal');
+$authLogoSetting = get_setting('brand_auth_logo_url', '');
 $logoSetting = get_setting('brand_logo_url', '');
-$logo = $logoSetting !== '' ? asset_url($logoSetting) : '';
+$logoSource = $authLogoSetting !== '' ? $authLogoSetting : $logoSetting;
+$logo = $logoSource !== '' ? asset_url($logoSource) : '';
 $primary = get_setting('brand_primary_color', '#2a6dff');
 $authHasLogo = $logo !== '';
 $view = $authView ?? 'login';

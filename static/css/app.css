@@ -2307,6 +2307,10 @@ label {
   color: var(--muted);
 }
 
+.brand-preview--auth {
+  margin-top: 24px;
+}
+
 .hint {
   display: block;
   margin-top: 6px;

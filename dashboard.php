@@ -250,6 +250,10 @@ if (is_post()) {
                 $clearLogo = isset($_POST['clear_logo']) && $_POST['clear_logo'] === '1';
                 $currentLogo = get_setting('brand_logo_url', '');
                 $logoPath = $clearLogo ? '' : $logoInput;
+                $authLogoInput = trim($_POST['brand_auth_logo_url'] ?? '');
+                $clearAuthLogo = isset($_POST['clear_auth_logo']) && $_POST['clear_auth_logo'] === '1';
+                $currentAuthLogo = get_setting('brand_auth_logo_url', '');
+                $authLogoPath = $clearAuthLogo ? '' : $authLogoInput;
                 $mailFromName = trim($_POST['mail_from_name'] ?? $companyName);
                 $mailFromAddress = trim($_POST['mail_from_address'] ?? '');
                 $mailTransport = strtolower(trim($_POST['mail_transport'] ?? 'mail'));
@@ -272,8 +276,7 @@ if (is_post()) {
                 $clearTurnstileSecret = isset($_POST['clear_turnstile_secret']) && $_POST['clear_turnstile_secret'] === '1';
                 $currentTurnstileSecret = get_setting('turnstile_secret_key', '');
 
-                if (!empty($_FILES['brand_logo_file']) && ($_FILES['brand_logo_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
-                    $file = $_FILES['brand_logo_file'];
+                $processLogoUpload = static function (array $file, string $prefix): string {
                     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
                         throw new RuntimeException('Unable to upload logo. Please try again.');
                     }
@@ -301,25 +304,35 @@ if (is_post()) {
                         throw new RuntimeException('Unable to prepare logo directory.');
                     }
 
-                    $filename = sprintf('brand-%s-%s.%s', (new DateTimeImmutable())->format('YmdHis'), bin2hex(random_bytes(4)), $allowed[$mime]);
+                    $filename = sprintf('%s-%s-%s.%s', $prefix, (new DateTimeImmutable())->format('YmdHis'), bin2hex(random_bytes(4)), $allowed[$mime]);
                     $destination = $uploadDir . '/' . $filename;
 
                     if (!move_uploaded_file($tmp, $destination)) {
                         throw new RuntimeException('Failed to store the uploaded logo.');
                     }
 
-                    $logoPath = 'static/uploads/' . $filename;
+                    return 'static/uploads/' . $filename;
+                };
 
-                    if ($currentLogo !== '' && $currentLogo !== $logoPath) {
-                        $existingPath = local_asset_path($currentLogo);
-                        if ($existingPath && is_file($existingPath)) {
-                            @unlink($existingPath);
-                        }
-                    }
-                } elseif ($clearLogo && $currentLogo !== '') {
+                if (!empty($_FILES['brand_logo_file']) && ($_FILES['brand_logo_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                    $logoPath = $processLogoUpload($_FILES['brand_logo_file'], 'brand');
+                }
+
+                if (!empty($_FILES['auth_logo_file']) && ($_FILES['auth_logo_file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                    $authLogoPath = $processLogoUpload($_FILES['auth_logo_file'], 'auth');
+                }
+
+                if (($clearLogo || $currentLogo !== $logoPath) && $currentLogo !== '' && $currentLogo !== $logoPath && $currentLogo !== $authLogoPath) {
                     $existingPath = local_asset_path($currentLogo);
                     if ($existingPath && is_file($existingPath)) {
                         @unlink($existingPath);
+                    }
+                }
+
+                if (($clearAuthLogo || $currentAuthLogo !== $authLogoPath) && $currentAuthLogo !== '' && $currentAuthLogo !== $logoPath && $currentAuthLogo !== $authLogoPath) {
+                    $existingAuthPath = local_asset_path($currentAuthLogo);
+                    if ($existingAuthPath && is_file($existingAuthPath)) {
+                        @unlink($existingAuthPath);
                     }
                 }
 
@@ -373,6 +386,7 @@ if (is_post()) {
                     'company_name' => $companyName !== '' ? $companyName : 'Service Portal',
                     'brand_logo_url' => $logoPath,
                     'brand_primary_color' => $primaryColor !== '' ? $primaryColor : '#3b82f6',
+                    'brand_auth_logo_url' => $authLogoPath,
                     'brand_font_family' => $fontFamily !== '' ? $fontFamily : 'Inter, sans-serif',
                     'support_email' => $supportEmail,
                     'brand_url' => $brandUrl,

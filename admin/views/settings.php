@@ -11,6 +11,8 @@ $mutedColor = get_setting('brand_muted_color', '#6b7280');
 $supportEmail = get_setting('support_email', '');
 $logoSetting = get_setting('brand_logo_url', '');
 $logoUrl = $logoSetting !== '' ? asset_url($logoSetting) : '';
+$authLogoSetting = get_setting('brand_auth_logo_url', '');
+$authLogoUrl = $authLogoSetting !== '' ? asset_url($authLogoSetting) : '';
 $brandInitials = brand_initials($companyName);
 $mailFromName = get_setting('mail_from_name', $companyName);
 $mailFromAddress = get_setting('mail_from_address', $supportEmail ?: 'no-reply@example.com');
@@ -62,12 +64,32 @@ $turnstileSecretStored = get_setting('turnstile_secret_key', '') !== '';
                         <span>Sidebar preview</span>
                     </div>
                 </div>
-                <label class="file-field">Upload logo
+                <label class="file-field">Upload dashboard logo
                     <input type="file" name="brand_logo_file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
                     <span class="hint">PNG, JPG, SVG or WebP are supported. Uploading replaces the current logo.</span>
                 </label>
                 <div class="button-group">
                     <button type="submit" class="button button--ghost" name="clear_logo" value="1"<?= $logoUrl === '' ? ' disabled' : ''; ?> formnovalidate>Remove logo</button>
+                </div>
+                <div class="brand-preview brand-preview--auth">
+                    <div class="brand-preview__mark">
+                        <?php if ($authLogoUrl !== ''): ?>
+                            <img src="<?= e($authLogoUrl); ?>" alt="<?= e($companyName); ?> logo">
+                        <?php else: ?>
+                            <span class="brand-placeholder" aria-hidden="true"><?= e($brandInitials); ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="brand-preview__meta">
+                        <strong><?= e($companyName); ?></strong>
+                        <span>Login &amp; signup preview</span>
+                    </div>
+                </div>
+                <label class="file-field">Upload auth logo
+                    <input type="file" name="auth_logo_file" accept="image/png,image/jpeg,image/svg+xml,image/webp">
+                    <span class="hint">Overrides the dashboard logo on login and signup pages.</span>
+                </label>
+                <div class="button-group">
+                    <button type="submit" class="button button--ghost" name="clear_auth_logo" value="1"<?= $authLogoUrl === '' ? ' disabled' : ''; ?> formnovalidate>Remove auth logo</button>
                 </div>
             </div>
             <div class="settings-fields">
@@ -111,9 +133,13 @@ $turnstileSecretStored = get_setting('turnstile_secret_key', '') !== '';
                 <label>Muted text colour
                     <input type="text" name="brand_muted_color" value="<?= e($mutedColor); ?>" placeholder="#6b7280">
                 </label>
-                <label>Logo URL
+                <label>Dashboard logo URL
                     <input type="url" name="brand_logo_url" value="<?= e($logoSetting); ?>" placeholder="https://cdn.example.com/logo.svg">
                     <span class="hint">Used when no uploaded file is present.</span>
+                </label>
+                <label>Auth logo URL
+                    <input type="url" name="brand_auth_logo_url" value="<?= e($authLogoSetting); ?>" placeholder="https://cdn.example.com/auth-logo.svg">
+                    <span class="hint">Optional logo for login and signup pages.</span>
                 </label>
                 <hr class="settings-divider">
                 <h3 class="settings-subheading">Email delivery</h3>

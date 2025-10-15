@@ -432,6 +432,7 @@ function seed_default_settings(PDO $pdo): void
     $defaults = [
         'company_name' => 'Service Portal',
         'brand_logo_url' => '',
+        'brand_auth_logo_url' => '',
         'brand_primary_color' => '#3b82f6',
         'brand_font_family' => 'Inter, sans-serif',
         'brand_surface_color' => '#f4f6fb',
