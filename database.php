@@ -160,6 +160,7 @@ function initialise_schema(PDO $pdo): void
     ensure_nullable_invoice_subscription($pdo);
     ensure_order_fulfilment_status($pdo);
     ensure_invoice_sequence_column($pdo);
+    ensure_invoice_download_tokens($pdo);
     ensure_user_payment_columns($pdo);
     ensure_subscription_payment_columns($pdo);
     ensure_service_payment_metadata($pdo);
@@ -650,6 +651,66 @@ function ensure_invoice_sequence_column(PDO $pdo): void
             $pdo->rollBack();
         }
         throw $e;
+    }
+}
+
+function database_generate_invoice_token(): string
+{
+    try {
+        return bin2hex(random_bytes(24));
+    } catch (Throwable $exception) {
+        if (function_exists('openssl_random_pseudo_bytes')) {
+            $strong = true;
+            $bytes = openssl_random_pseudo_bytes(24, $strong);
+            if ($bytes !== false && $strong) {
+                return bin2hex($bytes);
+            }
+        }
+
+        $fallback = substr(bin2hex(hash('sha256', uniqid((string) mt_rand(), true), true)), 0, 48);
+        if ($fallback === '') {
+            $fallback = substr(bin2hex(hash('sha256', uniqid('', true), true)), 0, 48);
+        }
+
+        return $fallback !== '' ? $fallback : substr(bin2hex(hash('sha256', (string) microtime(true), true)), 0, 48);
+    }
+}
+
+function ensure_invoice_download_tokens(PDO $pdo): void
+{
+    $columns = $pdo->query('PRAGMA table_info(invoices)');
+    $schema = $columns ? $columns->fetchAll(PDO::FETCH_ASSOC) : [];
+    $hasToken = false;
+    foreach ($schema as $column) {
+        if (($column['name'] ?? '') === 'download_token') {
+            $hasToken = true;
+            break;
+        }
+    }
+
+    if (!$hasToken) {
+        $pdo->exec('ALTER TABLE invoices ADD COLUMN download_token TEXT');
+    }
+
+    $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_download_token ON invoices(download_token)');
+
+    $pendingStmt = $pdo->query('SELECT id FROM invoices WHERE download_token IS NULL OR download_token = ""');
+    if (!$pendingStmt) {
+        return;
+    }
+
+    $pending = $pendingStmt->fetchAll(PDO::FETCH_COLUMN);
+    if (!$pending) {
+        return;
+    }
+
+    $update = $pdo->prepare('UPDATE invoices SET download_token = :token WHERE id = :id');
+    foreach ($pending as $invoiceId) {
+        $token = database_generate_invoice_token();
+        $update->execute([
+            'token' => $token,
+            'id' => (int) $invoiceId,
+        ]);
     }
 }
 

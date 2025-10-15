@@ -899,7 +899,8 @@ function process_subscription_cycle(PDO $pdo, array $subscription, \DateTimeImmu
     }
     $sequence = next_invoice_sequence($pdo, $userId);
 
-    $pdo->prepare('INSERT INTO invoices (subscription_id, order_id, user_id, service_id, total, status, due_at, created_at, updated_at, sequence) VALUES (:subscription_id, :order_id, :user_id, :service_id, :total, :status, :due_at, :created_at, :updated_at, :sequence)')
+    $downloadToken = generate_invoice_download_token();
+    $pdo->prepare('INSERT INTO invoices (subscription_id, order_id, user_id, service_id, total, status, due_at, created_at, updated_at, sequence, download_token) VALUES (:subscription_id, :order_id, :user_id, :service_id, :total, :status, :due_at, :created_at, :updated_at, :sequence, :download_token)')
         ->execute([
             'subscription_id' => $subscriptionId,
             'order_id' => $subscription['order_id'] ?? null,
@@ -911,6 +912,7 @@ function process_subscription_cycle(PDO $pdo, array $subscription, \DateTimeImmu
             'created_at' => $dueAt->format(\DateTimeInterface::ATOM),
             'updated_at' => $dueAt->format(\DateTimeInterface::ATOM),
             'sequence' => $sequence,
+            'download_token' => $downloadToken,
         ]);
 
     $invoiceId = (int) $pdo->lastInsertId();
@@ -929,6 +931,7 @@ function process_subscription_cycle(PDO $pdo, array $subscription, \DateTimeImmu
 
     if ($invoice) {
         $invoiceNumber = format_invoice_number($invoice);
+        $invoiceUrl = invoice_download_url($pdo, $invoice, true);
         $clientInfo = email_client_context(['name' => $invoice['name'], 'email' => $invoice['email']]);
         $itemsData = [
             [
@@ -942,7 +945,7 @@ function process_subscription_cycle(PDO $pdo, array $subscription, \DateTimeImmu
             'number' => email_safe($invoiceNumber),
             'date' => email_safe($now->format('j M Y')),
             'due_date' => email_safe($dueAt->format('j M Y')),
-            'url' => email_safe(absolute_url('dashboard/invoices/' . $invoiceId . '/download')),
+            'url' => email_safe($invoiceUrl),
             'status' => email_safe('Pending'),
             'total' => email_safe(format_currency($amount)),
         ];
@@ -1390,11 +1393,12 @@ function finalise_invoice_payment(PDO $pdo, array $invoice, string $provider, st
     $clientInfo = email_client_context(['name' => $clientName, 'email' => $clientEmail]);
     $invoiceDate = $invoice['created_at'] ?? null;
     $invoiceDue = $invoice['due_at'] ?? null;
+    $invoiceUrl = invoice_download_url($pdo, $invoice, true);
     $invoiceContext = [
         'number' => email_safe($invoiceNumber),
         'date' => email_safe($invoiceDate ? (new DateTimeImmutable($invoiceDate))->format('j M Y') : (new DateTimeImmutable())->format('j M Y')),
         'due_date' => email_safe($invoiceDue ? (new DateTimeImmutable($invoiceDue))->format('j M Y') : ''),
-        'url' => email_safe(absolute_url('dashboard/invoices/' . $invoiceId . '/download')),
+        'url' => email_safe($invoiceUrl),
         'status' => email_safe('Paid'),
         'total' => email_safe(format_currency($total)),
     ];
@@ -1553,6 +1557,69 @@ function invoice_document_path(int $invoiceId): string
     return invoice_document_directory() . '/invoice-' . $invoiceId . '.pdf';
 }
 
+function generate_invoice_download_token(): string
+{
+    try {
+        return bin2hex(random_bytes(24));
+    } catch (Throwable $exception) {
+        if (function_exists('openssl_random_pseudo_bytes')) {
+            $strong = true;
+            $bytes = openssl_random_pseudo_bytes(24, $strong);
+            if ($bytes !== false && $strong) {
+                return bin2hex($bytes);
+            }
+        }
+
+        $fallback = substr(bin2hex(hash('sha256', uniqid((string) mt_rand(), true), true)), 0, 48);
+        if ($fallback === '') {
+            $fallback = substr(bin2hex(hash('sha256', uniqid('', true), true)), 0, 48);
+        }
+
+        return $fallback !== '' ? $fallback : substr(bin2hex(hash('sha256', (string) microtime(true), true)), 0, 48);
+    }
+}
+
+function ensure_invoice_download_token_value(PDO $pdo, array &$invoice): string
+{
+    $token = trim((string) ($invoice['download_token'] ?? ''));
+    $invoiceId = (int) ($invoice['id'] ?? 0);
+
+    if ($token !== '' || $invoiceId <= 0) {
+        return $token;
+    }
+
+    $token = generate_invoice_download_token();
+
+    try {
+        $update = $pdo->prepare('UPDATE invoices SET download_token = :token WHERE id = :id');
+        $update->execute([
+            'token' => $token,
+            'id' => $invoiceId,
+        ]);
+    } catch (Throwable $exception) {
+        $check = $pdo->prepare('SELECT download_token FROM invoices WHERE id = :id');
+        $check->execute(['id' => $invoiceId]);
+        $existing = trim((string) $check->fetchColumn());
+        if ($existing !== '') {
+            $token = $existing;
+        }
+    }
+
+    $invoice['download_token'] = $token;
+    return $token;
+}
+
+function invoice_download_url(PDO $pdo, array &$invoice, bool $absolute = false): string
+{
+    $token = ensure_invoice_download_token_value($pdo, $invoice);
+    if ($token === '') {
+        return $absolute ? absolute_url('dashboard?view=invoices') : url_for('dashboard?view=invoices');
+    }
+
+    $path = 'invoice.php?token=' . rawurlencode($token);
+    return $absolute ? absolute_url($path) : url_for($path);
+}
+
 function record_order_event(PDO $pdo, int $orderId, string $type, string $title, ?string $description = null, ?\DateTimeInterface $timestamp = null): void
 {
     $orderId = (int) $orderId;
@@ -1641,6 +1708,8 @@ function generate_invoice_pdf(PDO $pdo, int $invoiceId, bool $force = false): ?s
         $notes = trim((string) $invoice['notes']);
     }
 
+    $invoiceUrl = invoice_download_url($pdo, $invoice, true);
+
     $context = [
         'brand' => email_brand_context(),
         'client' => $clientContext,
@@ -1649,7 +1718,7 @@ function generate_invoice_pdf(PDO $pdo, int $invoiceId, bool $force = false): ?s
             'date' => email_safe($issuedAt->format('j M Y')),
             'due_date' => email_safe($dueAt ? $dueAt->format('j M Y') : ''),
             'status' => email_safe($status),
-            'url' => email_safe(absolute_url('dashboard/invoices/' . $invoiceId . '/download')),
+            'url' => email_safe($invoiceUrl),
         ],
         'order' => [
             'id' => email_safe((string) $orderId),
@@ -2687,6 +2756,7 @@ function email_brand_context(): array
     return [
         'name' => email_safe($company),
         'logo_url' => email_safe($logoUrl),
+        'logo_alt' => email_safe($company),
         'url' => email_safe($brandUrl),
         'email' => email_safe($supportEmail),
         'address' => $addressHtml,

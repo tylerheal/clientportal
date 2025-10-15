@@ -74,7 +74,7 @@ $paymentReady = !empty($availability['paypal']) || !empty($availability['stripe'
                                 ?>
                                 <a
                                     class="button button--ghost"
-                                    href="<?= e(url_for('dashboard/invoices/' . $invoice['id'] . '/download')); ?>"
+                                    href="<?= e($invoice['download_url'] ?? url_for('invoice.php?token=' . ($invoice['download_token'] ?? ''))); ?>"
                                     target="_blank"
                                     rel="noopener"
                                 >View PDF</a>

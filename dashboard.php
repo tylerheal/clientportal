@@ -482,7 +482,7 @@ if (is_post()) {
                             'number' => email_safe($invoiceNumber),
                             'date' => email_safe($now->format('j M Y')),
                             'due_date' => email_safe($now->modify('+7 days')->format('j M Y')),
-                            'url' => email_safe(absolute_url('dashboard/invoices/1234/download')),
+                            'url' => email_safe(absolute_url('invoice.php?token=EXAMPLE123TOKEN')),
                             'status' => email_safe('Pending'),
                             'total' => email_safe(format_currency(199.00)),
                         ],
@@ -869,7 +869,8 @@ if (is_post()) {
                 }
 
                 $invoiceSequence = next_invoice_sequence($pdo, (int) $user['id']);
-                $invoiceStmt = $pdo->prepare('INSERT INTO invoices (subscription_id, order_id, user_id, service_id, total, status, due_at, created_at, updated_at, sequence) VALUES (:subscription_id, :order_id, :user_id, :service_id, :total, :status, :due_at, :created_at, :updated_at, :sequence)');
+                $downloadToken = generate_invoice_download_token();
+                $invoiceStmt = $pdo->prepare('INSERT INTO invoices (subscription_id, order_id, user_id, service_id, total, status, due_at, created_at, updated_at, sequence, download_token) VALUES (:subscription_id, :order_id, :user_id, :service_id, :total, :status, :due_at, :created_at, :updated_at, :sequence, :download_token)');
                 $invoiceStmt->execute([
                     'subscription_id' => $subscriptionId,
                     'order_id' => $orderId,
@@ -881,6 +882,7 @@ if (is_post()) {
                     'created_at' => $now,
                     'updated_at' => $now,
                     'sequence' => $invoiceSequence,
+                    'download_token' => $downloadToken,
                 ]);
                 $invoiceId = (int) $pdo->lastInsertId();
                 generate_invoice_pdf($pdo, $invoiceId);
@@ -1392,11 +1394,12 @@ if (is_post()) {
                             $invoiceDue = $invoiceRow['due_at'] ?? null;
                             $invoiceTotal = isset($invoiceRow['total']) ? (float) $invoiceRow['total'] : (float) $row['total_amount'];
                             $invoiceIdForLink = $invoiceRow['id'] ?? null;
+                            $invoiceUrl = $invoiceRow ? invoice_download_url($pdo, $invoiceRow, true) : absolute_url('dashboard?view=invoices');
                             $invoiceContext = [
                                 'number' => email_safe($invoiceLabel ?? 'Invoice'),
                                 'date' => email_safe($invoiceDate ? (new DateTimeImmutable($invoiceDate))->format('j M Y') : (new DateTimeImmutable())->format('j M Y')),
                                 'due_date' => email_safe($invoiceDue ? (new DateTimeImmutable($invoiceDue))->format('j M Y') : ''),
-                                'url' => email_safe($invoiceIdForLink ? absolute_url('dashboard/invoices/' . $invoiceIdForLink . '/download') : absolute_url('dashboard/invoices')),
+                                'url' => email_safe($invoiceUrl),
                                 'status' => email_safe('Paid'),
                                 'total' => email_safe(format_currency($invoiceTotal)),
                             ];
@@ -1863,9 +1866,13 @@ if ($user['role'] === 'admin') {
             }
         }
 
-        $invoiceStmt = $pdo->prepare('SELECT id, sequence, total, status, due_at, paid_at, created_at, updated_at FROM invoices WHERE order_id = :order ORDER BY created_at ASC');
+        $invoiceStmt = $pdo->prepare('SELECT id, sequence, total, status, due_at, paid_at, created_at, updated_at, download_token FROM invoices WHERE order_id = :order ORDER BY created_at ASC');
         $invoiceStmt->execute(['order' => $selectedOrder['id']]);
         $selectedOrderInvoices = $invoiceStmt->fetchAll();
+        foreach ($selectedOrderInvoices as &$invoice) {
+            $invoice['download_url'] = invoice_download_url($pdo, $invoice, false);
+        }
+        unset($invoice);
 
         $eventsStmt = $pdo->prepare('SELECT title, description, created_at FROM order_events WHERE order_id = :order ORDER BY created_at ASC');
         $eventsStmt->execute(['order' => $selectedOrder['id']]);
@@ -1990,6 +1997,10 @@ $orders = $orderStmt->fetchAll();
 $invoiceStmt = $pdo->prepare('SELECT i.*, s.name AS service_name, o.payment_method, o.payment_status, sub.interval AS subscription_interval FROM invoices i JOIN services s ON s.id = i.service_id LEFT JOIN orders o ON o.id = i.order_id LEFT JOIN subscriptions sub ON sub.id = i.subscription_id WHERE i.user_id = :user ORDER BY i.created_at DESC');
 $invoiceStmt->execute(['user' => $user['id']]);
 $invoices = $invoiceStmt->fetchAll();
+foreach ($invoices as &$invoice) {
+    $invoice['download_url'] = invoice_download_url($pdo, $invoice, false);
+}
+unset($invoice);
 
 $ticketStmt = $pdo->prepare('SELECT * FROM tickets WHERE user_id = :user ORDER BY updated_at DESC');
 $ticketStmt->execute(['user' => $user['id']]);
@@ -2050,9 +2061,13 @@ if ($view === 'order') {
         }
     }
 
-    $invoiceStmt = $pdo->prepare('SELECT id, sequence, total, status, due_at, paid_at, created_at, updated_at FROM invoices WHERE order_id = :order ORDER BY created_at ASC');
+    $invoiceStmt = $pdo->prepare('SELECT id, sequence, total, status, due_at, paid_at, created_at, updated_at, download_token FROM invoices WHERE order_id = :order ORDER BY created_at ASC');
     $invoiceStmt->execute(['order' => $clientSelectedOrder['id']]);
     $clientSelectedOrderInvoices = $invoiceStmt->fetchAll();
+    foreach ($clientSelectedOrderInvoices as &$invoice) {
+        $invoice['download_url'] = invoice_download_url($pdo, $invoice, false);
+    }
+    unset($invoice);
 
     $clientEventsStmt = $pdo->prepare('SELECT title, description, created_at FROM order_events WHERE order_id = :order ORDER BY created_at ASC');
     $clientEventsStmt->execute(['order' => $clientSelectedOrder['id']]);

@@ -24,11 +24,12 @@ foreach ($pending->fetchAll() as $invoice) {
     $invoiceNumber = format_invoice_number($invoice);
     $clientInfo = email_client_context(['name' => $invoice['name'], 'email' => $invoice['email']]);
     $dueDate = $invoice['due_at'] ?? null;
+    $invoiceUrl = invoice_download_url($pdo, $invoice, true);
     $invoiceContext = [
         'number' => email_safe($invoiceNumber),
         'date' => email_safe((new DateTimeImmutable())->format('j M Y')),
         'due_date' => email_safe($dueDate ? (new DateTimeImmutable($dueDate))->format('j M Y') : ''),
-        'url' => email_safe(absolute_url('dashboard/invoices/' . $invoice['id'] . '/download')),
+        'url' => email_safe($invoiceUrl),
         'status' => email_safe('Overdue'),
         'total' => email_safe(format_currency((float) $invoice['total'])),
     ];
