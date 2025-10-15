@@ -387,6 +387,19 @@ function set_setting(string $key, string $value): void
     unset($GLOBALS['__settings_cache']);
 }
 
+function all_settings(): array
+{
+    $pdo = get_db();
+    $stmt = $pdo->query('SELECT key, value FROM settings ORDER BY key');
+    $settings = [];
+
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $settings[$row['key']] = $row['value'];
+    }
+
+    return $settings;
+}
+
 function paypal_mode(): string
 {
     $mode = strtolower(get_setting('paypal_mode', 'sandbox'));

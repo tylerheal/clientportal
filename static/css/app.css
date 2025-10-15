@@ -2334,6 +2334,24 @@ label {
   color: var(--text);
 }
 
+.settings-backup {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  align-items: stretch;
+}
+
+.settings-backup__form {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+
+.settings-backup__form .button {
+  justify-self: flex-start;
+}
+
 .checkbox-inline {
   display: inline-flex;
   align-items: center;
