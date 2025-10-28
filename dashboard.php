@@ -231,6 +231,24 @@ if (is_post()) {
                     flash('success', 'Service removed.');
                 }
                 break;
+            case 'export_settings':
+                require_login('admin');
+                $now = new \DateTimeImmutable();
+                $payload = [
+                    'exported_at' => $now->format(\DateTimeInterface::ATOM),
+                    'settings' => all_settings(),
+                ];
+                $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+                if ($json === false) {
+                    throw new RuntimeException('Unable to export settings.');
+                }
+
+                $filename = 'portal-settings-' . $now->format('Ymd-His') . '.json';
+                header('Content-Type: application/json');
+                header('Content-Disposition: attachment; filename="' . $filename . '"');
+                header('Content-Length: ' . strlen($json));
+                echo $json;
+                exit;
             case 'update_settings':
                 require_login('admin');
                 $companyName = trim($_POST['company_name'] ?? '');
@@ -436,6 +454,65 @@ if (is_post()) {
                 }
 
                 flash('success', 'Settings updated successfully.');
+                break;
+            case 'import_settings':
+                require_login('admin');
+                if (empty($_FILES['settings_file']) || ($_FILES['settings_file']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+                    throw new RuntimeException('Upload a JSON settings export to import.');
+                }
+
+                $file = $_FILES['settings_file'];
+                if (($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+                    throw new RuntimeException('The settings file could not be uploaded. Try again.');
+                }
+
+                $tmp = $file['tmp_name'] ?? '';
+                if ($tmp === '' || !is_uploaded_file($tmp)) {
+                    throw new RuntimeException('Invalid settings upload.');
+                }
+
+                $contents = file_get_contents($tmp);
+                if ($contents === false) {
+                    throw new RuntimeException('Unable to read the uploaded settings file.');
+                }
+
+                $data = json_decode($contents, true);
+                if ($data === null && json_last_error() !== JSON_ERROR_NONE) {
+                    throw new RuntimeException('The uploaded file is not valid JSON.');
+                }
+
+                $settingsData = $data['settings'] ?? $data;
+                if (!is_array($settingsData)) {
+                    throw new RuntimeException('No settings were found in the uploaded file.');
+                }
+
+                $updated = 0;
+                foreach ($settingsData as $key => $value) {
+                    if (!is_string($key) || $key === '') {
+                        continue;
+                    }
+
+                    if ($value === null) {
+                        $value = '';
+                    } elseif (!is_scalar($value)) {
+                        $encoded = json_encode($value, JSON_UNESCAPED_SLASHES);
+                        if ($encoded === false) {
+                            continue;
+                        }
+                        $value = $encoded;
+                    } else {
+                        $value = (string) $value;
+                    }
+
+                    set_setting($key, $value);
+                    $updated++;
+                }
+
+                $message = $updated === 0
+                    ? 'Settings file imported. No changes were necessary.'
+                    : sprintf('Imported %d setting%s from backup.', $updated, $updated === 1 ? '' : 's');
+
+                flash('success', $message);
                 break;
             case 'send_test_email':
                 require_login('admin');

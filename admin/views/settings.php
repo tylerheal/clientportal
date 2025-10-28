@@ -236,6 +236,32 @@ $turnstileSecretStored = get_setting('turnstile_secret_key', '') !== '';
     <div class="card">
         <header class="card-header">
             <div>
+                <h2>Backup &amp; restore</h2>
+                <p>Export all admin settings or restore them after a database reset.</p>
+            </div>
+        </header>
+        <div class="card-section settings-backup">
+            <form action="<?= e(url_for('dashboard')); ?>" method="post" class="settings-backup__form">
+                <input type="hidden" name="action" value="export_settings">
+                <input type="hidden" name="redirect" value="admin/settings">
+                <p class="card-note">Download a JSON snapshot of every portal setting, including API keys and branding.</p>
+                <button type="submit" class="button button--ghost">Download settings export</button>
+            </form>
+            <form action="<?= e(url_for('dashboard')); ?>" method="post" enctype="multipart/form-data" class="settings-backup__form">
+                <input type="hidden" name="action" value="import_settings">
+                <input type="hidden" name="redirect" value="admin/settings">
+                <p class="card-note">Upload a previously exported JSON file to restore configuration values in bulk.</p>
+                <label>Settings JSON file
+                    <input type="file" name="settings_file" accept="application/json,.json" required>
+                    <span class="hint">Select the JSON export generated from this page.</span>
+                </label>
+                <button type="submit" class="button button--primary">Import settings</button>
+            </form>
+        </div>
+    </div>
+    <div class="card">
+        <header class="card-header">
+            <div>
                 <h2>Send test email</h2>
                 <p>Confirm your mail settings by sending a sample template to any address.</p>
             </div>
